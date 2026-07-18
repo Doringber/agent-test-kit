@@ -1,0 +1,33 @@
+"""Agent test configuration."""
+
+from __future__ import annotations
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AgentTestConfig(BaseSettings):
+    """Configuration for agent test execution."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="AGENT_TEST_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    base_url: str = Field(default="http://localhost:8080", description="Agent API base URL")
+    execute_path: str = Field(default="/api/v1/execute", description="Agent execute endpoint")
+    timeout_seconds: float = Field(default=120.0, ge=1.0)
+    agent_id: str = Field(default="unknown-agent")
+    agent_version: str | None = None
+    environment: str = Field(default="local")
+    model: str | None = None
+    prompt_version: str | None = None
+    repository: str | None = None
+    branch: str | None = None
+    commit: str | None = None
+    pipeline_id: str | None = None
+
+    @property
+    def execute_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}{self.execute_path}"

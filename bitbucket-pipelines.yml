@@ -1,0 +1,92 @@
+definitions:
+  aws-oidc: &aws-oidc
+    oidc: true
+    image: public.ecr.aws/docker/library/python:3.11
+  steps:
+    - step: &validate-package
+        name: Validate package
+        <<: *aws-oidc
+        script:
+          - export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-west-1}"
+          - export AWS_ROLE_ARN="${AWS_ROLE_ARN:-arn:aws:iam::609081136822:role/Bitbucket-Pipeline-Deploy-Serverless-App}"
+          - export AWS_WEB_IDENTITY_TOKEN_FILE="$(pwd)/web-identity-token"
+          - echo "${BITBUCKET_STEP_OIDC_TOKEN}" > "${AWS_WEB_IDENTITY_TOKEN_FILE}"
+          - python -m pip install --upgrade pip
+          - pip install -e ".[dev]"
+          - ruff check .
+          - ruff format --check .
+          - mypy src
+          - mkdir -p reports
+          - bash scripts/run-tests.sh
+          - python -m build
+          - twine check dist/*
+        artifacts:
+          - dist/**
+          - reports/**
+          - coverage.xml
+
+    - step: &publish-tag
+        name: Publish to CodeArtifact
+        <<: *aws-oidc
+        script:
+          - export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-west-1}"
+          - export AWS_ROLE_ARN="${AWS_ROLE_ARN:-arn:aws:iam::609081136822:role/Bitbucket-Pipeline-Deploy-Serverless-App}"
+          - export AWS_WEB_IDENTITY_TOKEN_FILE="$(pwd)/web-identity-token"
+          - echo "${BITBUCKET_STEP_OIDC_TOKEN}" > "${AWS_WEB_IDENTITY_TOKEN_FILE}"
+          - export CODEARTIFACT_DOMAIN="${CODEARTIFACT_DOMAIN:-pango-pypi-server}"
+          - export CODEARTIFACT_DOMAIN_OWNER="${CODEARTIFACT_DOMAIN_OWNER:-609081136822}"
+          - export CODEARTIFACT_REPOSITORY="${CODEARTIFACT_REPOSITORY:-pango-pypi}"
+          - TAG_VERSION="${BITBUCKET_TAG#v}"
+          - PKG_VERSION="$(tr -d '[:space:]' < VERSION)"
+          - |
+            if [ "${TAG_VERSION}" != "${PKG_VERSION}" ]; then
+              echo "Tag version (${TAG_VERSION}) does not match package VERSION (${PKG_VERSION})" >&2
+              exit 1
+            fi
+          - python -m pip install --upgrade pip
+          - pip install -e ".[dev]"
+          - ruff check .
+          - ruff format --check .
+          - mypy src
+          - mkdir -p reports
+          - bash scripts/run-tests.sh
+          - python -m build
+          - twine check dist/*
+          - |
+            if aws codeartifact list-package-versions \
+              --domain "${CODEARTIFACT_DOMAIN}" \
+              --domain-owner "${CODEARTIFACT_DOMAIN_OWNER}" \
+              --repository "${CODEARTIFACT_REPOSITORY}" \
+              --format pypi \
+              --package agent-test-kit \
+              --region "${AWS_DEFAULT_REGION}" \
+              --query "versions[?version=='${PKG_VERSION}']" \
+              --output text | grep -q "${PKG_VERSION}"; then
+              echo "Version ${PKG_VERSION} already published; skipping upload."
+              exit 0
+            fi
+          - bash scripts/publish-codeartifact.sh
+          - echo "Published agent-test-kit version ${PKG_VERSION}"
+        artifacts:
+          - dist/**
+          - reports/**
+          - coverage.xml
+
+pipelines:
+  pull-requests:
+    "**":
+      - step: *validate-package
+
+  branches:
+    master:
+      - step: *validate-package
+    main:
+      - step: *validate-package
+
+  tags:
+    "v*":
+      - step: *publish-tag
+
+  custom:
+    publish-codeartifact:
+      - step: *publish-tag
