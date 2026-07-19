@@ -36,11 +36,17 @@ class AgentTrace(BaseModel):
         if not payload:
             return cls()
         tool_calls_raw = payload.get("tool_calls", [])
+        if not isinstance(tool_calls_raw, list):
+            msg = "trace.tool_calls must be a list"
+            raise ValueError(msg)
         tool_calls = [
             ToolCall.model_validate(item) if isinstance(item, dict) else item
             for item in tool_calls_raw
         ]
         events_raw = payload.get("events", [])
+        if not isinstance(events_raw, list):
+            msg = "trace.events must be a list"
+            raise ValueError(msg)
         events = [
             TraceEvent.model_validate(item) if isinstance(item, dict) else item
             for item in events_raw

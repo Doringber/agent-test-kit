@@ -14,8 +14,8 @@ def test_version_is_semver_like() -> None:
 
 
 def test_read_version_file() -> None:
-    assert _read_version_file() == "0.1.0"
+    assert _read_version_file() == "0.1.1"
 
 
 def test_resolve_version_matches_file() -> None:
-    assert _resolve_version() == "0.1.0"
+    assert _resolve_version() == "0.1.1"

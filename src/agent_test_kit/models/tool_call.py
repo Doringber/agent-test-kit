@@ -18,7 +18,7 @@ class ToolCall(BaseModel):
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     output: Any | None = None
-    status: ToolCallStatus = ToolCallStatus.SUCCESS
+    status: ToolCallStatus = ToolCallStatus.PENDING
     started_at: datetime | None = None
     completed_at: datetime | None = None
     duration_ms: int | None = None

@@ -25,6 +25,10 @@ class VerificationResult:
     passed: bool
     message: str | None = None
     evidence: dict[str, Any] = field(default_factory=dict)
+    verifier_name: str | None = None
+    duration_ms: int | None = None
+    error_type: str | None = None
+    timed_out: bool = False
 
 
 @runtime_checkable

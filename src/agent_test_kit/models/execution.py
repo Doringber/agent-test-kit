@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -12,7 +13,22 @@ from agent_test_kit.models.tool_call import ToolCall
 from agent_test_kit.models.trace import AgentTrace
 
 if TYPE_CHECKING:
-    from agent_test_kit.assertions.flow import FlowAssertionEngine
+    from agent_test_kit.assertions.flow import (
+        FlowAssertionEngine,
+        StatusFilter,
+        WorkflowStep,
+    )
+    from agent_test_kit.models.enums import ToolCallStatus
+
+
+class AssertionOutcome(BaseModel):
+    """Structured result captured for an execution assertion."""
+
+    name: str
+    passed: bool
+    expected: Any | None = None
+    actual: Any | None = None
+    message: str | None = None
 
 
 class AgentExecutionResult(BaseModel):
@@ -29,6 +45,7 @@ class AgentExecutionResult(BaseModel):
     completed_at: datetime | None = None
     duration_ms: int | None = None
     assertions: list[str] = Field(default_factory=list)
+    assertion_outcomes: list[AssertionOutcome] = Field(default_factory=list)
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -41,34 +58,122 @@ class AgentExecutionResult(BaseModel):
 
         return FlowAssertionEngine(self)
 
-    def assert_success(self) -> None:
-        if not self.success:
-            message = self.error or "Agent execution failed"
-            raise AssertionError(message)
+    def _capture_assertion(
+        self,
+        name: str,
+        *,
+        expected: Any,
+        actual: Any,
+        assertion: Callable[[], None],
+    ) -> None:
+        try:
+            assertion()
+        except AssertionError as exc:
+            self.assertion_outcomes.append(
+                AssertionOutcome(
+                    name=name,
+                    passed=False,
+                    expected=expected,
+                    actual=actual,
+                    message=str(exc),
+                )
+            )
+            raise
+        self.assertion_outcomes.append(
+            AssertionOutcome(
+                name=name,
+                passed=True,
+                expected=expected,
+                actual=actual,
+            )
+        )
 
-    def assert_tool_called(self, tool_name: str, server: str | None = None) -> None:
-        self._engine().assert_tool_called(tool_name, server=server)
+    def assert_success(self) -> None:
+        def evaluate() -> None:
+            if not self.success:
+                message = self.error or "Agent execution failed"
+                raise AssertionError(message)
+
+        self._capture_assertion(
+            "assert_success",
+            expected=True,
+            actual=self.success,
+            assertion=evaluate,
+        )
+
+    def assert_tool_called(
+        self,
+        tool_name: str,
+        server: str | None = None,
+        *,
+        status: StatusFilter = None,
+        arguments: Mapping[str, Any] | None = None,
+        argument_predicate: Callable[[Mapping[str, Any]], bool] | None = None,
+    ) -> None:
+        self._capture_assertion(
+            "assert_tool_called",
+            expected={
+                "server": server,
+                "tool_name": tool_name,
+                "status": status,
+                "arguments": arguments,
+            },
+            actual=[call.model_dump(mode="json") for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_tool_called(
+                tool_name,
+                server=server,
+                status=status,
+                arguments=arguments,
+                argument_predicate=argument_predicate,
+            ),
+        )
 
     def assert_tool_not_called(self, tool_name: str, server: str | None = None) -> None:
-        self._engine().assert_tool_not_called(tool_name, server=server)
+        self._capture_assertion(
+            "assert_tool_not_called",
+            expected={"server": server, "tool_name": tool_name, "called": False},
+            actual=[call.model_dump(mode="json") for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_tool_not_called(tool_name, server=server),
+        )
 
     def assert_tool_order(
         self,
         *,
         before: tuple[str | None, str],
         after: tuple[str | None, str],
+        status: StatusFilter = None,
+        before_status: StatusFilter = None,
+        after_status: StatusFilter = None,
     ) -> None:
-        self._engine().assert_tool_order(before=before, after=after)
+        self._capture_assertion(
+            "assert_tool_order",
+            expected={"before": before, "after": after},
+            actual=[call.qualified_name for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_tool_order(
+                before=before,
+                after=after,
+                status=status,
+                before_status=before_status,
+                after_status=after_status,
+            ),
+        )
 
     def assert_tool_sequence(
         self,
-        sequence: list[tuple[str | None, str]],
+        sequence: Sequence[WorkflowStep],
         *,
         allow_additional_read_tools: bool = False,
+        status: StatusFilter = None,
     ) -> None:
-        self._engine().assert_tool_sequence(
-            sequence,
-            allow_additional_read_tools=allow_additional_read_tools,
+        self._capture_assertion(
+            "assert_tool_sequence",
+            expected=[str(step) for step in sequence],
+            actual=[call.qualified_name for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_tool_sequence(
+                sequence,
+                allow_additional_read_tools=allow_additional_read_tools,
+                status=status,
+            ),
         )
 
     def assert_read_before_write(
@@ -77,13 +182,138 @@ class AgentExecutionResult(BaseModel):
         read_tool: tuple[str | None, str],
         write_tool: tuple[str | None, str],
     ) -> None:
-        self._engine().assert_read_before_write(
-            read_tool=read_tool,
-            write_tool=write_tool,
+        self._capture_assertion(
+            "assert_read_before_write",
+            expected={"read_before": read_tool, "write": write_tool},
+            actual=[call.qualified_name for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_read_before_write(
+                read_tool=read_tool,
+                write_tool=write_tool,
+            ),
+        )
+
+    def assert_tool_call_count(
+        self,
+        tool_name: str,
+        *,
+        server: str | None = None,
+        exact: int | None = None,
+        min_calls: int | None = None,
+        max_calls: int | None = None,
+        status: ToolCallStatus | set[ToolCallStatus] | None = None,
+        arguments: Mapping[str, Any] | None = None,
+        argument_predicate: Callable[[Mapping[str, Any]], bool] | None = None,
+    ) -> None:
+        matching_count = len(
+            self._engine().matching_calls(
+                tool_name,
+                server=server,
+                status=status,
+                arguments=arguments,
+                argument_predicate=argument_predicate,
+            )
+        )
+        self._capture_assertion(
+            "assert_tool_call_count",
+            expected={"exact": exact, "min_calls": min_calls, "max_calls": max_calls},
+            actual=matching_count,
+            assertion=lambda: self._engine().assert_tool_call_count(
+                tool_name,
+                server=server,
+                exact=exact,
+                min_calls=min_calls,
+                max_calls=max_calls,
+                status=status,
+                arguments=arguments,
+                argument_predicate=argument_predicate,
+            ),
+        )
+
+    def assert_max_workflow_steps(self, maximum: int) -> None:
+        self._capture_assertion(
+            "assert_max_workflow_steps",
+            expected={"maximum": maximum},
+            actual=len(self.tool_calls),
+            assertion=lambda: self._engine().assert_max_workflow_steps(maximum),
+        )
+
+    def assert_max_tool_attempts(
+        self,
+        maximum: int,
+        *,
+        tool_name: str | None = None,
+        server: str | None = None,
+    ) -> None:
+        attempts = [
+            call.attempt
+            for call in self.tool_calls
+            if tool_name is None or call.matches(tool_name, server)
+        ]
+        self._capture_assertion(
+            "assert_max_tool_attempts",
+            expected={"maximum": maximum, "server": server, "tool_name": tool_name},
+            actual=attempts,
+            assertion=lambda: self._engine().assert_max_tool_attempts(
+                maximum,
+                tool_name=tool_name,
+                server=server,
+            ),
+        )
+
+    def assert_max_retries(
+        self,
+        maximum: int,
+        *,
+        tool_name: str | None = None,
+        server: str | None = None,
+    ) -> None:
+        attempts = [
+            call.attempt
+            for call in self.tool_calls
+            if tool_name is None or call.matches(tool_name, server)
+        ]
+        self._capture_assertion(
+            "assert_max_retries",
+            expected={"maximum": maximum, "server": server, "tool_name": tool_name},
+            actual=[max(attempt - 1, 0) for attempt in attempts],
+            assertion=lambda: self._engine().assert_max_retries(
+                maximum,
+                tool_name=tool_name,
+                server=server,
+            ),
+        )
+
+    def assert_no_failed_tool_calls(
+        self,
+        tool_name: str | None = None,
+        *,
+        server: str | None = None,
+    ) -> None:
+        self._capture_assertion(
+            "assert_no_failed_tool_calls",
+            expected={"failed_calls": 0, "server": server, "tool_name": tool_name},
+            actual=[call.model_dump(mode="json") for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_no_failed_tool_calls(
+                tool_name,
+                server=server,
+            ),
+        )
+
+    def assert_read_only(self) -> None:
+        self._capture_assertion(
+            "assert_read_only",
+            expected={"write_calls": 0},
+            actual=[call.model_dump(mode="json") for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_read_only(),
         )
 
     def assert_no_duplicate_tool_writes(self) -> None:
-        self._engine().assert_no_duplicate_tool_writes()
+        self._capture_assertion(
+            "assert_no_duplicate_tool_writes",
+            expected={"duplicate_writes": 0},
+            actual=[call.model_dump(mode="json") for call in self.tool_calls],
+            assertion=lambda: self._engine().assert_no_duplicate_tool_writes(),
+        )
 
     def assert_write_tool_called_once(
         self,
@@ -91,7 +321,19 @@ class AgentExecutionResult(BaseModel):
         server: str | None,
         tool: str,
     ) -> None:
-        self._engine().assert_write_tool_called_once(server=server, tool=tool)
+        self._capture_assertion(
+            "assert_write_tool_called_once",
+            expected={"server": server, "tool": tool, "count": 1},
+            actual=[
+                call.model_dump(mode="json")
+                for call in self.tool_calls
+                if call.matches(tool, server)
+            ],
+            assertion=lambda: self._engine().assert_write_tool_called_once(
+                server=server,
+                tool=tool,
+            ),
+        )
 
     @classmethod
     def from_api_response(

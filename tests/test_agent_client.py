@@ -12,13 +12,27 @@ from agent_test_kit.models.enums import ToolOperationKind
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
-    def __init__(self, response_body: dict[str, object]) -> None:
+    def __init__(
+        self,
+        response_body: dict[str, object] | None = None,
+        *,
+        status_code: int = 200,
+        text: str | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.response_body = response_body
+        self.status_code = status_code
+        self.text = text
+        self.error = error
         self.last_request: httpx.Request | None = None
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.last_request = request
-        return httpx.Response(200, json=self.response_body)
+        if self.error is not None:
+            raise self.error
+        if self.text is not None:
+            return httpx.Response(self.status_code, text=self.text)
+        return httpx.Response(self.status_code, json=self.response_body)
 
 
 @pytest.mark.agent_unit
@@ -63,3 +77,32 @@ def test_new_run_context_generates_unique_ids() -> None:
     first = client.new_run_context()
     second = client.new_run_context()
     assert first.run_id != second.run_id
+
+
+@pytest.mark.agent_unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("transport", "expected_error"),
+    [
+        (_MockTransport(status_code=500, text="server exploded"), "500"),
+        (_MockTransport(text="<html>not json</html>"), "Malformed JSON"),
+        (_MockTransport(error=httpx.ConnectError("connection refused")), "Transport failure"),
+        (_MockTransport(error=httpx.ReadTimeout("too slow")), "timed out"),
+    ],
+)
+async def test_execute_normalizes_expected_remote_failures(
+    transport: _MockTransport,
+    expected_error: str,
+) -> None:
+    client = AgentClient(
+        AgentTestConfig(base_url="http://agent.test"),
+        transport=transport,
+    )
+    context = client.new_run_context()
+
+    result = await client.execute({"message": "hello"}, run_context=context)
+
+    assert not result.success
+    assert expected_error.lower() in (result.error or "").lower()
+    assert result.run_id == context.run_id
+    assert result.correlation_id == context.correlation_id

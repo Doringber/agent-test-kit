@@ -31,9 +31,17 @@ def test_report_finalize_metrics() -> None:
                 passed=False,
                 duration_ms=20,
             ),
+            ScenarioReport(
+                name="skip",
+                nodeid="n3",
+                passed=False,
+                skipped=True,
+                duration_ms=0,
+            ),
         ],
     )
     report.finalize_metrics()
-    assert report.metrics.total_scenarios == 2
+    assert report.metrics.total_scenarios == 3
     assert report.metrics.passed == 1
     assert report.metrics.failed == 1
+    assert report.metrics.skipped == 1

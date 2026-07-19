@@ -7,6 +7,8 @@ import pytest
 from agent_test_kit.models.enums import ToolCallStatus, ToolOperationKind
 from agent_test_kit.models.tool_call import ToolCall
 
+pytest_plugins = ["pytester"]
+
 
 @pytest.fixture
 def sample_tool_calls() -> list[ToolCall]:

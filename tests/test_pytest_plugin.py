@@ -63,3 +63,69 @@ def test_agent_client_fixture_available(agent_client: object) -> None:
     from agent_test_kit import AgentClient
 
     assert isinstance(agent_client, AgentClient)
+
+
+@pytest.mark.agent_unit
+def test_cursor_fixture_forces_agent_endpoint_and_records_current_node(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AGENT_TEST_BASE_URL", raising=False)
+    config = AgentTestConfig(base_url="http://localhost:8080")
+    request = MagicMock()
+    request.config.stash = pytest.Stash()
+    request.node.nodeid = "tests/demo.py::test_demo"
+    request.config.stash[pytest_plugin._STASH_KEY] = pytest_plugin.PluginState(
+        agent_config=config,
+        json_writer=None,
+    )
+
+    client = pytest_plugin.cursor_agent_client.__wrapped__(config, request)
+    result = AgentExecutionResult(success=True, run_id="run_fixture")
+    assert client.config.execute_url == "http://localhost:8080/agent"
+
+    client._on_result(result)
+
+    state = request.config.stash[pytest_plugin._STASH_KEY]
+    assert state.results[request.node.nodeid] is result
+
+
+@pytest.mark.agent_unit
+@pytest.mark.asyncio
+async def test_agent_cleanup_fixture_always_executes_callbacks() -> None:
+    cleaned: list[str] = []
+    fixture_generator = pytest_plugin.agent_cleanup.__wrapped__()
+    manager = await anext(fixture_generator)
+    manager.register(lambda: cleaned.append("done"))
+
+    await fixture_generator.aclose()
+
+    assert cleaned == ["done"]
+
+
+@pytest.mark.agent_unit
+def test_agent_cleanup_fixture_supports_pytest_asyncio_strict_mode(
+    pytester: pytest.Pytester,
+) -> None:
+    pytester.makeini(
+        """
+[pytest]
+asyncio_mode = strict
+asyncio_default_fixture_loop_scope = function
+"""
+    )
+    pytester.makepyfile(
+        """
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_cleanup(agent_cleanup):
+    cleaned = []
+    agent_cleanup.register(lambda: cleaned.append("done"))
+    assert cleaned == []
+"""
+    )
+
+    result = pytester.runpytest("-q")
+
+    result.assert_outcomes(passed=1)
