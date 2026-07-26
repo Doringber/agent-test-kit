@@ -333,8 +333,19 @@ pytest tests/ \
   --agent-report-html=reports/agent-results.html
 ```
 
-Reports are redacted (tokens, credentials, sensitive args/outputs).  
-Scenarios appear when tests use `agent_client`, `cursor_agent_client`, or `agent_scenario.attach_execution_result(...)`.
+Reports are redacted (tokens, credentials, sensitive args/outputs).
+
+**Tool flow data in reports:** scenarios are recorded for every test, but **tool calls, timeline, and assertions** appear only when the test attaches an execution result. Use one of:
+
+| Approach | When to use |
+|----------|-------------|
+| `agent_client` / `cursor_agent_client` fixture | Recommended — auto-attaches on `execute()` |
+| `agent_scenario.attach_execution_result(result)` | Manual `AgentClient(...)` without fixture |
+| `store_execution_result(config, nodeid, result)` | Advanced / custom pytest hooks |
+
+If you construct `AgentClient(...)` directly without `on_result` or `attach_execution_result`, the HTML report will show an empty tool-flow section even when the agent ran successfully.
+
+The HTML report includes a **visual tool-flow strip** (read/write badges and server/tool sequence) plus expandable tables for arguments, outputs, timeline, and verifiers.
 
 ---
 

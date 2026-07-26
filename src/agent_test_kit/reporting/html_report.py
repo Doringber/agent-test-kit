@@ -34,6 +34,53 @@ def _table(headers: list[str], rows: list[list[Any]]) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
+def _flow_kind_class(kind: str | None) -> str:
+    normalized = (kind or "unknown").lower()
+    if normalized == "read":
+        return "flow-read"
+    if normalized == "write":
+        return "flow-write"
+    return "flow-unknown"
+
+
+def _flow_status_class(status: str | None) -> str:
+    normalized = (status or "").lower()
+    if normalized in {"success", "completed", "ok"}:
+        return "flow-ok"
+    if normalized in {"error", "failed", "failure", "timeout", "timed_out"}:
+        return "flow-bad"
+    return "flow-pending"
+
+
+def _flow_label(server: Any, name: str) -> str:
+    server_text = str(server).strip() if server else ""
+    if server_text:
+        return f"{server_text}/{name}"
+    return name
+
+
+def _flow_sequence(tool_calls: list[dict[str, Any]]) -> str:
+    """Render a compact left-to-right tool/MCP data-flow strip."""
+    if not tool_calls:
+        return '<p class="flow-empty">No tool calls recorded for this scenario.</p>'
+
+    steps: list[str] = []
+    for index, tool in enumerate(tool_calls):
+        kind = str(tool.get("operation_kind") or "unknown")
+        status = str(tool.get("status") or "")
+        label = _flow_label(tool.get("server"), str(tool.get("name") or "unknown"))
+        step = (
+            f'<span class="flow-step {_flow_status_class(status)}">'
+            f'<span class="flow-badge {_flow_kind_class(kind)}">{escape(kind.upper())}</span>'
+            f"<span class=\"flow-name\">{escape(label)}</span>"
+            f"</span>"
+        )
+        steps.append(step)
+        if index < len(tool_calls) - 1:
+            steps.append('<span class="flow-arrow" aria-hidden="true">→</span>')
+    return f'<div class="flow-strip" role="list">{"".join(steps)}</div>'
+
+
 class HtmlReportWriter:
     """Render an escaped and redacted report as one portable HTML file."""
 
@@ -75,6 +122,16 @@ th,td{{border:1px solid #d8dee8;padding:.5rem;text-align:left;vertical-align:top
 th{{background:#edf1f7}}
 pre{{white-space:pre-wrap;word-break:break-word;margin:0;font:12px ui-monospace}}
 details{{margin:.6rem 0}}a{{color:#175cd3}}
+.flow-strip{{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;margin:.75rem 0;padding:.75rem;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px}}
+.flow-step{{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .45rem;border-radius:6px;border:1px solid #d0d7e2;background:#fff}}
+.flow-step.flow-ok{{border-color:#86bfa3}}.flow-step.flow-bad{{border-color:#e08a8a;background:#fff5f5}}
+.flow-step.flow-pending{{border-color:#c9b26a;background:#fffbeb}}
+.flow-badge{{font:10px/1 ui-monospace;font-weight:700;padding:.15rem .35rem;border-radius:4px;color:#fff}}
+.flow-badge.flow-read{{background:#175cd3}}.flow-badge.flow-write{{background:#b42318}}
+.flow-badge.flow-unknown{{background:#667085}}
+.flow-name{{font:12px ui-monospace;font-weight:600;color:#18212f}}
+.flow-arrow{{color:#667085;font-weight:700;padding:0 .1rem}}
+.flow-empty{{color:#667085;font-style:italic;margin:.5rem 0}}
 </style>
 </head>
 <body><main>
@@ -146,9 +203,12 @@ details{{margin:.6rem 0}}a{{color:#175cd3}}
             ["Verifier", "Passed", "Message", "Evidence links", "Evidence"],
             verification_rows,
         )
+        flow_html = _flow_sequence(scenario["tool_calls"])
         return f"""<section class="card">
 <h3>{_text(scenario["name"])} — <span class="status {escape(status)}">{escape(status)}</span></h3>
 {_table(["Field", "Value"], summary)}
+<h4>Tool flow</h4>
+{flow_html}
 <details open><summary>Assertions ({len(assertion_rows)})</summary>
 {_table(["Name", "Passed", "Expected", "Actual", "Message"], assertion_rows)}</details>
 <details><summary>Side effects ({len(verification_rows)})</summary>

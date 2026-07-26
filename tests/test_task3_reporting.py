@@ -140,3 +140,72 @@ def test_html_report_is_self_contained_escaped_and_redacted(tmp_path: Path) -> N
     assert "[REDACTED]" in html
     assert "<style>" in html
     assert "model-x" in html
+
+
+@pytest.mark.agent_unit
+def test_html_report_renders_tool_flow_strip(tmp_path: Path) -> None:
+    writer = JsonReportWriter(
+        config=AgentTestConfig(agent_id="flow-agent"),
+        output_path=tmp_path / "report.json",
+    )
+    execution = AgentExecutionResult(
+        success=True,
+        run_id="run_flow",
+        trace=AgentTrace(
+            tool_calls=[
+                ToolCall(
+                    server="bitbucket",
+                    name="get_pull_request",
+                    operation_kind=ToolOperationKind.READ,
+                    status=ToolCallStatus.SUCCESS,
+                ),
+                ToolCall(
+                    server="jira",
+                    name="create_issue",
+                    operation_kind=ToolOperationKind.WRITE,
+                    status=ToolCallStatus.SUCCESS,
+                ),
+            ]
+        ),
+    )
+    writer.record_scenario(
+        name="multi-mcp flow",
+        nodeid="tests/flow.py::test_flow",
+        passed=True,
+        duration_ms=10,
+        markers=["agent_e2e"],
+        execution_result=execution,
+    )
+
+    html = HtmlReportWriter(tmp_path / "report.html").write(writer.build_report()).read_text(
+        encoding="utf-8"
+    )
+
+    assert "flow-strip" in html
+    assert "bitbucket/get_pull_request" in html
+    assert "jira/create_issue" in html
+    assert "flow-read" in html
+    assert "flow-write" in html
+    assert "flow-arrow" in html
+
+
+@pytest.mark.agent_unit
+def test_html_report_shows_empty_flow_message_without_tool_calls(tmp_path: Path) -> None:
+    writer = JsonReportWriter(
+        config=AgentTestConfig(agent_id="empty-flow"),
+        output_path=tmp_path / "report.json",
+    )
+    writer.record_scenario(
+        name="no tools",
+        nodeid="tests/empty.py::test_empty",
+        passed=True,
+        duration_ms=1,
+        markers=[],
+    )
+
+    html = HtmlReportWriter(tmp_path / "report.html").write(writer.build_report()).read_text(
+        encoding="utf-8"
+    )
+
+    assert "flow-empty" in html
+    assert "No tool calls recorded" in html
