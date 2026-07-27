@@ -165,7 +165,7 @@ class JsonReportWriter:
                 connected_mcp_servers=list(
                     extra.get("connected_mcp_servers")
                     or (
-                        execution_result.trace.connected_mcp_servers
+                        getattr(execution_result.trace, "connected_mcp_servers", [])
                         if execution_result is not None
                         else []
                     )

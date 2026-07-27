@@ -30,6 +30,7 @@ class AgentTrace(BaseModel):
     token_usage: int | None = None
     estimated_cost_usd: float | None = None
     model: str | None = None
+    connected_mcp_servers: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any] | None) -> AgentTrace:
@@ -57,4 +58,7 @@ class AgentTrace(BaseModel):
             token_usage=payload.get("token_usage"),
             estimated_cost_usd=payload.get("estimated_cost_usd"),
             model=payload.get("model"),
+            connected_mcp_servers=[
+                str(item) for item in payload.get("connected_mcp_servers", []) if item
+            ],
         )
