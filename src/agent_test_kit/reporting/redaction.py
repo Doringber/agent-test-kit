@@ -90,6 +90,14 @@ _SENSITIVE_SUFFIXES = {
     ("bearer", "token"),
 }
 
+# Avoid ReDoS on huge stream-json stdout (credential regex is exponential on long runs).
+_MAX_REDACT_LINE_CHARS = 8_192
+_MAX_REDACT_STRING_CHARS = 262_144
+_CREDENTIAL_HINT = re.compile(
+    r"(?i)(?:api[_ -]?key|(?:access|refresh|auth|id|bearer)[_-]?token|"
+    r"client[_-]?secret|authorization|credentials?|password|secret|bearer\s+)",
+)
+
 
 def _redact_quoted_field(match: re.Match[str]) -> str:
     return f"{match.group('prefix')}{match.group('quote')}[REDACTED]{match.group('quote')}"
@@ -133,13 +141,39 @@ def _is_sensitive_key(key: str) -> bool:
     return False
 
 
-def redact_string(value: str) -> str:
+def _redact_string_chunk(value: str) -> str:
     redacted = _QUOTED_CREDENTIAL_FIELD_PATTERN.sub(_redact_quoted_field, value)
     redacted = _UNQUOTED_CREDENTIAL_ASSIGNMENT_PATTERN.sub(
         _redact_unquoted_field,
         redacted,
     )
     return _BEARER_PATTERN.sub("Bearer [REDACTED]", redacted)
+
+
+def _redact_bounded_line(line: str) -> str:
+    if len(line) > _MAX_REDACT_LINE_CHARS:
+        line = line[:_MAX_REDACT_LINE_CHARS] + "...[truncated for redaction]"
+    if not _CREDENTIAL_HINT.search(line):
+        return line
+    return _redact_string_chunk(line)
+
+
+def redact_string(value: str) -> str:
+    if len(value) > _MAX_REDACT_STRING_CHARS:
+        value = value[:_MAX_REDACT_STRING_CHARS] + "\n...[truncated for redaction]"
+
+    if len(value) <= _MAX_REDACT_LINE_CHARS:
+        return _redact_string_chunk(value)
+
+    if "\n" in value:
+        return "\n".join(_redact_bounded_line(line) for line in value.split("\n"))
+
+    # Single-line blob (e.g. minified JSON) — process in fixed-size chunks.
+    chunks = [
+        _redact_bounded_line(value[index : index + _MAX_REDACT_LINE_CHARS])
+        for index in range(0, len(value), _MAX_REDACT_LINE_CHARS)
+    ]
+    return "".join(chunks)
 
 
 def redact_value(value: Any) -> Any:

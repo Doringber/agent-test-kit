@@ -199,3 +199,15 @@ def test_redaction_preserves_noncredential_colon_fields() -> None:
     )
 
     assert redact_string(value) == value
+
+
+@pytest.mark.agent_unit
+def test_redact_string_truncates_huge_input_before_regex() -> None:
+    """Live agent stream-json can exceed 1MB; regex must not hang for minutes."""
+    credential_line = 'stream: {"api_key": "top-secret-value"}'
+    huge = "\n".join([credential_line, "x" * 400_000])
+    redacted = redact_string(huge)
+    assert len(redacted) < len(huge)
+    assert "[truncated for redaction]" in redacted
+    assert "[REDACTED]" in redacted
+    assert "top-secret-value" not in redacted
