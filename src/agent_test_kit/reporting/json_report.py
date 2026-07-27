@@ -47,6 +47,8 @@ class JsonReportWriter:
         self.run_id = f"pytest_{uuid.uuid4().hex[:12]}"
         self.started_at = datetime.now(UTC)
         self.scenarios: list[ScenarioReport] = []
+        self.endpoint_profile: dict[str, str] | None = None
+        self.expected_mcp_servers: list[str] = []
 
     def record_scenario(
         self,
@@ -109,6 +111,8 @@ class JsonReportWriter:
             not verification.passed and "security" in verification.verifier_name.lower()
             for verification in verification_reports
         )
+        response_payload = execution_result.response if execution_result is not None else {}
+        response_dict = response_payload if isinstance(response_payload, dict) else {}
         self.scenarios.append(
             ScenarioReport(
                 name=name,
@@ -141,6 +145,50 @@ class JsonReportWriter:
                     or security_outcome_failure
                     or security_verification_failure
                 ),
+                scenario_kind=str(
+                    extra.get("scenario_kind")
+                    or response_dict.get("scenario_kind")
+                    or ("prompt_review" if response_dict.get("suggested_prompt") else None)
+                ),
+                original_prompt=(
+                    extra.get("original_prompt")
+                    or response_dict.get("original_prompt")
+                ),
+                suggested_prompt=(
+                    extra.get("suggested_prompt")
+                    or response_dict.get("suggested_prompt")
+                    or response_dict.get("suggestedPrompt")
+                ),
+                endpoint_base_url=(
+                    extra.get("endpoint_base_url") or response_dict.get("endpoint_base_url")
+                ),
+                connected_mcp_servers=list(
+                    extra.get("connected_mcp_servers")
+                    or (
+                        execution_result.trace.connected_mcp_servers
+                        if execution_result is not None
+                        else []
+                    )
+                    or response_dict.get("connected_mcp_servers")
+                    or []
+                ),
+                injection_detected=extra.get("injection_detected")
+                if extra.get("injection_detected") is not None
+                else response_dict.get("injection_detected"),
+                expected_mcp_servers=list(
+                    extra.get("expected_mcp_servers") or self.expected_mcp_servers or []
+                ),
+                violation_types=list(
+                    extra.get("violation_types")
+                    or response_dict.get("violation_types")
+                    or []
+                ),
+                golden_outcome=extra.get("golden_outcome") or response_dict.get("golden_outcome"),
+                expected_classification=extra.get("expected_classification")
+                or response_dict.get("expected_classification"),
+                golden_met=extra.get("golden_met")
+                if extra.get("golden_met") is not None
+                else response_dict.get("golden_met"),
             )
         )
 
@@ -159,6 +207,8 @@ class JsonReportWriter:
             started_at=self.started_at,
             completed_at=datetime.now(UTC),
             scenarios=self.scenarios,
+            endpoint_profile=self.endpoint_profile,
+            expected_mcp_servers=self.expected_mcp_servers,
         )
         report.finalize_metrics()
         return report

@@ -60,6 +60,16 @@ class ScenarioReport(BaseModel):
     estimated_cost_usd: float | None = None
     duplicate_write_count: int = 0
     security_failure: bool = False
+    scenario_kind: str | None = None
+    original_prompt: str | None = None
+    suggested_prompt: str | None = None
+    endpoint_base_url: str | None = None
+    connected_mcp_servers: list[str] = Field(default_factory=list)
+    injection_detected: bool | None = None
+    violation_types: list[str] = Field(default_factory=list)
+    golden_outcome: str | None = None
+    expected_classification: str | None = None
+    golden_met: bool | None = None
 
     @model_validator(mode="after")
     def derive_status(self) -> ScenarioReport:
@@ -106,6 +116,8 @@ class AgentTestRunReport(BaseModel):
     completed_at: datetime
     scenarios: list[ScenarioReport] = Field(default_factory=list)
     metrics: RunMetrics = Field(default_factory=RunMetrics)
+    endpoint_profile: dict[str, str] | None = None
+    expected_mcp_servers: list[str] = Field(default_factory=list)
 
     def finalize_metrics(self) -> None:
         self.metrics.total_scenarios = len(self.scenarios)

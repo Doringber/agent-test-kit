@@ -62,7 +62,7 @@ def _flow_label(server: Any, name: str) -> str:
 def _flow_sequence(tool_calls: list[dict[str, Any]]) -> str:
     """Render a compact left-to-right tool/MCP data-flow strip."""
     if not tool_calls:
-        return '<p class="flow-empty">No tool calls recorded for this scenario.</p>'
+        return '<p class="flow-empty">No MCP tool calls recorded for this scenario.</p>'
 
     steps: list[str] = []
     for index, tool in enumerate(tool_calls):
@@ -79,6 +79,89 @@ def _flow_sequence(tool_calls: list[dict[str, Any]]) -> str:
         if index < len(tool_calls) - 1:
             steps.append('<span class="flow-arrow" aria-hidden="true">→</span>')
     return f'<div class="flow-strip" role="list">{"".join(steps)}</div>'
+
+
+def _metric_cards(metrics: dict[str, Any]) -> str:
+    cards = [
+        ("Scenarios", metrics.get("total_scenarios"), "metric-neutral"),
+        ("Passed", metrics.get("passed"), "metric-pass"),
+        ("Failed", metrics.get("failed"), "metric-fail"),
+        ("Tool calls", metrics.get("total_tool_calls"), "metric-neutral"),
+        ("Tokens", metrics.get("total_token_usage") or "—", "metric-neutral"),
+        ("Est. cost", metrics.get("estimated_cost_usd") or "—", "metric-neutral"),
+    ]
+    body = "".join(
+        f'<div class="metric-card {css}"><div class="metric-value">{escape(str(val))}</div>'
+        f'<div class="metric-label">{escape(label)}</div></div>'
+        for label, val, css in cards
+    )
+    return f'<div class="metric-grid">{body}</div>'
+
+
+def _endpoint_table(endpoints: dict[str, str]) -> str:
+    if not endpoints:
+        return ""
+    rows = [[name, url] for name, url in endpoints.items()]
+    return (
+        '<section class="card endpoint-card"><h2>Service endpoints</h2>'
+        + _table(["Endpoint", "URL"], rows)
+        + "</section>"
+    )
+
+
+def _mcp_server_chips(servers: list[str], expected: list[str] | None = None) -> str:
+    if not servers and not expected:
+        return '<p class="flow-empty">No connected MCP servers recorded.</p>'
+    expected_set = set(expected or [])
+    chips: list[str] = []
+    for server in servers:
+        css = "mcp-chip connected"
+        if expected_set and server in expected_set:
+            css = "mcp-chip connected expected"
+        chips.append(f'<span class="{css}">{escape(server)}</span>')
+    for server in expected or []:
+        if server not in servers:
+            chips.append(f'<span class="mcp-chip missing">{escape(server)} (expected)</span>')
+    return f'<div class="mcp-chips">{"".join(chips)}</div>'
+
+
+def _prompt_review_block(scenario: dict[str, Any]) -> str:
+    original = scenario.get("original_prompt")
+    suggested = scenario.get("suggested_prompt")
+    if not original and not suggested:
+        return ""
+    return f"""<div class="prompt-review">
+<h4>Prompt review pipeline</h4>
+<div class="prompt-cols">
+<div class="prompt-pane"><div class="prompt-label">Original prompt</div><pre>{_text(original)}</pre></div>
+<div class="prompt-pane suggested"><div class="prompt-label">Suggested prompt</div><pre>{_text(suggested)}</pre></div>
+</div></div>"""
+
+
+def _golden_outcome_block(scenario: dict[str, Any]) -> str:
+    golden = scenario.get("golden_outcome")
+    violation_types = scenario.get("violation_types") or []
+    expected_class = scenario.get("expected_classification")
+    golden_met = scenario.get("golden_met")
+    if not golden and not violation_types:
+        return ""
+    chips = "".join(
+        f'<span class="violation-chip">{escape(str(v))}</span>' for v in violation_types
+    )
+    met = ""
+    if golden_met is not None:
+        css = "golden-met" if golden_met else "golden-miss"
+        label = "GOLDEN MET" if golden_met else "GOLDEN MISS"
+        met = f'<span class="golden-flag {css}">{label}</span>'
+    class_badge = ""
+    if expected_class:
+        class_badge = f'<span class="classification-chip">{escape(str(expected_class))}</span>'
+    return f"""<div class="golden-outcome">
+<h4>Golden expected outcome</h4>
+<div class="golden-meta">{class_badge}{met}</div>
+<p>{_text(golden)}</p>
+<div class="violation-chips">{chips}</div>
+</div>"""
 
 
 class HtmlReportWriter:
@@ -105,39 +188,95 @@ class HtmlReportWriter:
             ["Completed", payload["completed_at"]],
         ]
         metric_rows = [[key.replace("_", " ").title(), value] for key, value in metrics.items()]
+        env_badge = escape(str(payload.get("environment") or "local"))
+        agent_badge = escape(str(payload.get("agent_id") or "agent"))
+        endpoint_html = _endpoint_table(payload.get("endpoint_profile") or {})
+        expected_mcp = payload.get("expected_mcp_servers") or []
+        global_mcp = _mcp_server_chips(
+            sorted(
+                {
+                    server
+                    for scenario in scenarios
+                    for server in (scenario.get("connected_mcp_servers") or [])
+                }
+            ),
+            expected_mcp if isinstance(expected_mcp, list) else [],
+        )
+        mcp_overview = (
+            f'<section class="card"><h2>Connected MCP servers (run)</h2>{global_mcp}</section>'
+            if global_mcp
+            else ""
+        )
         document = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent test report</title>
+<title>Agent test report — {agent_badge}</title>
 <style>
-body{{font:14px system-ui,sans-serif;margin:2rem;color:#18212f;background:#f5f7fa}}
-main{{max-width:1200px;margin:auto}}h1,h2,h3{{margin:.6em 0}}
-.card{{background:white;border:1px solid #d8dee8;border-radius:8px;padding:1rem;margin:1rem 0}}
-.status{{font-weight:700;text-transform:uppercase}}.passed{{color:#16794b}}
-.failed,.error{{color:#b42318}}.skipped{{color:#805b10}}
-table{{border-collapse:collapse;width:100%;margin:.75rem 0}}
-th,td{{border:1px solid #d8dee8;padding:.5rem;text-align:left;vertical-align:top}}
-th{{background:#edf1f7}}
+:root{{--bg:#eef2f7;--card:#fff;--line:#d8dee8;--text:#18212f;--muted:#667085;--pass:#16794b;--fail:#b42318;--accent:#175cd3}}
+*{{box-sizing:border-box}}body{{font:14px/1.5 system-ui,sans-serif;margin:0;color:var(--text);background:var(--bg)}}
+main{{max-width:1280px;margin:0 auto;padding:1.5rem 1rem 3rem}}
+.hero{{background:linear-gradient(135deg,#1e3a5f,#175cd3);color:#fff;border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1rem}}
+.hero h1{{margin:0 0 .35rem;font-size:1.5rem}}.hero-meta{{opacity:.9;font-size:.9rem}}
+.badges{{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.75rem}}
+.badge{{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);padding:.2rem .55rem;border-radius:999px;font-size:.75rem;font-weight:600}}
+.card{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.1rem;margin:1rem 0;box-shadow:0 1px 2px rgba(16,24,40,.04)}}
+.endpoint-card table td:first-child{{font-weight:600;white-space:nowrap;width:12rem}}
+.metric-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin:1rem 0}}
+.metric-card{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.85rem;text-align:center}}
+.metric-value{{font-size:1.35rem;font-weight:700}}.metric-label{{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;margin-top:.15rem}}
+.metric-pass .metric-value{{color:var(--pass)}}.metric-fail .metric-value{{color:var(--fail)}}
+h2,h3,h4{{margin:.5em 0}}.scenario-card{{border-left:4px solid var(--line)}}
+.scenario-card.passed{{border-left-color:var(--pass)}}.scenario-card.failed,.scenario-card.error{{border-left-color:var(--fail)}}
+.scenario-card.skipped{{border-left-color:#b8860b}}
+.status{{font-weight:700;text-transform:uppercase}}.passed{{color:var(--pass)}}.failed,.error{{color:var(--fail)}}.skipped{{color:#805b10}}
+table{{border-collapse:collapse;width:100%;margin:.75rem 0}}th,td{{border:1px solid var(--line);padding:.5rem;text-align:left;vertical-align:top}}th{{background:#edf1f7}}
 pre{{white-space:pre-wrap;word-break:break-word;margin:0;font:12px ui-monospace}}
-details{{margin:.6rem 0}}a{{color:#175cd3}}
-.flow-strip{{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;margin:.75rem 0;padding:.75rem;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px}}
+details{{margin:.6rem 0}}a{{color:var(--accent)}}
+.flow-strip{{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;margin:.75rem 0;padding:.75rem;background:#f8fafc;border:1px solid var(--line);border-radius:8px}}
 .flow-step{{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .45rem;border-radius:6px;border:1px solid #d0d7e2;background:#fff}}
 .flow-step.flow-ok{{border-color:#86bfa3}}.flow-step.flow-bad{{border-color:#e08a8a;background:#fff5f5}}
 .flow-step.flow-pending{{border-color:#c9b26a;background:#fffbeb}}
 .flow-badge{{font:10px/1 ui-monospace;font-weight:700;padding:.15rem .35rem;border-radius:4px;color:#fff}}
-.flow-badge.flow-read{{background:#175cd3}}.flow-badge.flow-write{{background:#b42318}}
-.flow-badge.flow-unknown{{background:#667085}}
-.flow-name{{font:12px ui-monospace;font-weight:600;color:#18212f}}
-.flow-arrow{{color:#667085;font-weight:700;padding:0 .1rem}}
-.flow-empty{{color:#667085;font-style:italic;margin:.5rem 0}}
+.flow-badge.flow-read{{background:var(--accent)}}.flow-badge.flow-write{{background:var(--fail)}}
+.flow-badge.flow-unknown{{background:var(--muted)}}
+.flow-name{{font:12px ui-monospace;font-weight:600;color:var(--text)}}
+.flow-arrow{{color:var(--muted);font-weight:700;padding:0 .1rem}}.flow-empty{{color:var(--muted);font-style:italic;margin:.5rem 0}}
+.prompt-review{{margin:.75rem 0}}.prompt-cols{{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}}
+@media(max-width:800px){{.prompt-cols{{grid-template-columns:1fr}}}}
+.prompt-pane{{border:1px solid var(--line);border-radius:8px;padding:.65rem;background:#fafbfc}}
+.prompt-pane.suggested{{border-color:#86bfa3;background:#f6fffa}}
+.prompt-label{{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.35rem;font-weight:700}}
+.scenario-kind{{display:inline-block;background:#eef4ff;color:var(--accent);font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:4px;margin-left:.5rem;text-transform:uppercase}}
+.mcp-chips{{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0 .75rem}}
+.mcp-chip{{font:11px ui-monospace;font-weight:700;padding:.25rem .55rem;border-radius:999px;border:1px solid var(--line);background:#fff}}
+.mcp-chip.connected{{background:#eef4ff;border-color:#b2c9ff;color:var(--accent)}}
+.mcp-chip.expected{{background:#ecfdf3;border-color:#86bfa3;color:var(--pass)}}
+.mcp-chip.missing{{background:#fff5f5;border-color:#e08a8a;color:var(--fail)}}
+.injection-flag{{display:inline-block;margin-left:.5rem;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;font-weight:700}}
+.injection-flag.detected{{background:#fff5f5;color:var(--fail)}}
+.injection-flag.safe{{background:#ecfdf3;color:var(--pass)}}
+.golden-outcome{{margin:.75rem 0;padding:.75rem;border:1px solid var(--line);border-radius:8px;background:#fafbfc}}
+.golden-meta{{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.4rem}}
+.golden-flag{{font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:4px}}
+.golden-flag.golden-met{{background:#ecfdf3;color:var(--pass)}}
+.golden-flag.golden-miss{{background:#fff5f5;color:var(--fail)}}
+.classification-chip{{font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:4px;background:#eef4ff;color:var(--accent)}}
+.violation-chips{{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.4rem}}
+.violation-chip{{font:10px ui-monospace;padding:.15rem .4rem;border-radius:4px;background:#f2f4f7;color:var(--muted)}}
 </style>
 </head>
 <body><main>
+<header class="hero">
 <h1>Agent test report</h1>
-<section class="card"><h2>Metadata</h2>{_table(["Field", "Value"], metadata)}</section>
-<section class="card"><h2>Run metrics</h2>{_table(["Metric", "Value"], metric_rows)}</section>
+<div class="hero-meta">Framework {escape(str(payload.get("framework_version") or ""))} · Run {escape(str(payload["run_id"]))}</div>
+<div class="badges"><span class="badge">Agent: {agent_badge}</span><span class="badge">Env: {env_badge}</span></div>
+</header>
+{_metric_cards(metrics)}
+{endpoint_html}
+{mcp_overview}
+<section class="card"><h2>Run metadata</h2>{_table(["Field", "Value"], metadata)}</section>
 <h2>Scenarios</h2>{scenario_sections}
 </main></body></html>"""
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,10 +343,33 @@ details{{margin:.6rem 0}}a{{color:#175cd3}}
             verification_rows,
         )
         flow_html = _flow_sequence(scenario["tool_calls"])
-        return f"""<section class="card">
-<h3>{_text(scenario["name"])} — <span class="status {escape(status)}">{escape(status)}</span></h3>
+        kind = scenario.get("scenario_kind")
+        kind_badge = (
+            f'<span class="scenario-kind">{escape(str(kind))}</span>' if kind else ""
+        )
+        prompt_review_html = _prompt_review_block(scenario)
+        golden_html = _golden_outcome_block(scenario)
+        connected = scenario.get("connected_mcp_servers") or []
+        expected_mcp = scenario.get("expected_mcp_servers") or []
+        mcp_html = _mcp_server_chips(
+            connected if isinstance(connected, list) else [],
+            expected_mcp if isinstance(expected_mcp, list) else [],
+        )
+        injection = scenario.get("injection_detected")
+        injection_html = ""
+        if injection is not None:
+            css = "detected" if injection else "safe"
+            label = "INJECTION MITIGATED" if injection else "NO INJECTION FLAG"
+            injection_html = f'<span class="injection-flag {css}">{label}</span>'
+        status_class = escape(status)
+        return f"""<section class="card scenario-card {status_class}">
+<h3>{_text(scenario["name"])}{kind_badge}{injection_html} — <span class="status {status_class}">{escape(status)}</span></h3>
 {_table(["Field", "Value"], summary)}
-<h4>Tool flow</h4>
+<h4>Connected MCP servers</h4>
+{mcp_html}
+{golden_html}
+{prompt_review_html}
+<h4>MCP tool flow</h4>
 {flow_html}
 <details open><summary>Assertions ({len(assertion_rows)})</summary>
 {_table(["Name", "Passed", "Expected", "Actual", "Message"], assertion_rows)}</details>

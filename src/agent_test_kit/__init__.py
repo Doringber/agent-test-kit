@@ -8,6 +8,11 @@ from agent_test_kit.cleanup.manager import CleanupManager
 from agent_test_kit.client.agent_client import AgentClient
 from agent_test_kit.client.config import AgentTestConfig
 from agent_test_kit.client.cursor_agent_client import CursorAgentClient
+from agent_test_kit.client.prompt_ai_helper_profiles import (
+    PromptAiHelperProfile,
+    get_profile,
+)
+from agent_test_kit.client.prompt_review_client import PromptReviewClient
 from agent_test_kit.models.execution import AgentExecutionResult, AgentFlowResult, AssertionOutcome
 from agent_test_kit.models.run_context import RunContext
 from agent_test_kit.publishing import (
@@ -57,6 +62,8 @@ __all__ = [
     "JsonReportWriter",
     "MarkdownStatusReportWriter",
     "OptionalStep",
+    "PromptReviewClient",
+    "PromptAiHelperProfile",
     "PublishResult",
     "RegressionCase",
     "RegressionCaseLoadError",
@@ -75,6 +82,7 @@ __all__ = [
     "VerificationSummary",
     "__version__",
     "load_regression_cases",
+    "get_profile",
     "run_repeatedly",
     "run_verifiers",
 ]

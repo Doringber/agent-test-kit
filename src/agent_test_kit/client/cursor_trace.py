@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
 
@@ -14,16 +15,24 @@ from agent_test_kit.reporting.redaction import redact_value
 
 
 def _extract_tool_name(event: dict[str, Any]) -> str:
-    _, mcp = _tool_payload(event)
+    tool_call, mcp = _tool_payload(event)
     raw_mcp_args = mcp.get("args")
     mcp_args = raw_mcp_args if isinstance(raw_mcp_args, dict) else {}
+    if "getMcpToolsToolCall" in (tool_call or {}):
+        discovered = mcp_args.get("toolName")
+        if discovered:
+            return f"get_mcp_tools:{discovered}"
+        return "get_mcp_tools"
     raw_tool_use = event.get("tool_use")
     tool_use = raw_tool_use if isinstance(raw_tool_use, dict) else {}
     raw_function = event.get("function")
     function = raw_function if isinstance(raw_function, dict) else {}
+    nested_args = mcp_args.get("args")
+    nested = nested_args if isinstance(nested_args, dict) else {}
     return str(
         mcp_args.get("toolName")
         or mcp_args.get("name")
+        or nested.get("name")
         or event.get("name")
         or event.get("tool_name")
         or tool_use.get("name")
@@ -45,12 +54,19 @@ def _tool_payload(event: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]
         msg = "tool_call must be an object"
         raise ValueError(msg)
     normalized_tool_call = tool_call or {}
-    mcp = normalized_tool_call.get("mcpToolCall")
-    if mcp is not None and not isinstance(mcp, dict):
-        msg = "mcpToolCall must be an object"
-        raise ValueError(msg)
-    normalized_mcp = mcp or {}
-    return normalized_tool_call, normalized_mcp
+    mcp: dict[str, Any] = {}
+    if "mcpToolCall" in normalized_tool_call:
+        raw = normalized_tool_call.get("mcpToolCall")
+        mcp = raw if isinstance(raw, dict) else {}
+    elif "getMcpToolsToolCall" in normalized_tool_call:
+        raw = normalized_tool_call.get("getMcpToolsToolCall")
+        mcp = raw if isinstance(raw, dict) else {}
+    else:
+        for key, value in normalized_tool_call.items():
+            if key.endswith("ToolCall") and isinstance(value, dict):
+                mcp = value
+                break
+    return normalized_tool_call, mcp
 
 
 def _extract_call_id(event: dict[str, Any]) -> str | None:
@@ -185,6 +201,55 @@ def _total_tokens(token_usage: dict[str, int]) -> int | None:
     return total or None
 
 
+def _connected_servers_from_stdout(
+    stdout: str,
+    tool_calls: list[ToolCall],
+) -> list[str]:
+    """Collect MCP server identifiers declared in stream-json and tool calls."""
+    servers: set[str] = set()
+    for call in tool_calls:
+        if call.server and call.server.strip().lower() != "unknown":
+            servers.add(call.server.strip())
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for match in re.finditer(
+            r'"(?:server|serverIdentifier|providerIdentifier)"\s*:\s*"([^"]+)"',
+            stripped,
+        ):
+            value = match.group(1).strip()
+            if value and not value.startswith("http"):
+                servers.add(value)
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "user":
+            continue
+        message = event.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "text":
+                continue
+            text = str(part.get("text") or "")
+            banner = re.search(
+                r"following servers:\s*([^\n.]+)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if banner:
+                for item in banner.group(1).split(","):
+                    candidate = item.strip()
+                    if candidate:
+                        servers.add(candidate)
+    return sorted(servers)
+
+
 def parse_stream_json_stdout(
     stdout: str,
     *,
@@ -270,7 +335,13 @@ def parse_stream_json_stdout(
         if call.id is not None:
             calls_by_id[call.id] = call
 
-    return AgentTrace(tool_calls=tool_calls, token_usage=_total_tokens(token_usage), model=model)
+    connected = _connected_servers_from_stdout(stdout, tool_calls)
+    return AgentTrace(
+        tool_calls=tool_calls,
+        token_usage=_total_tokens(token_usage),
+        model=model,
+        connected_mcp_servers=connected,
+    )
 
 
 def _tool_call_from_event(
@@ -345,7 +416,7 @@ def trace_from_cursor_response(
             server_mappings=server_mappings,
             operation_mappings=operation_mappings,
         )
-        if parsed.tool_calls or parsed.token_usage:
+        if parsed.tool_calls or parsed.token_usage or parsed.connected_mcp_servers:
             return parsed
 
     tools_called = body.get("tools_called")
