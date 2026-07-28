@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,7 @@ from agent_test_kit.cleanup.manager import CleanupManager
 from agent_test_kit.client.agent_client import AgentClient
 from agent_test_kit.client.config import AgentTestConfig
 from agent_test_kit.client.cursor_agent_client import CursorAgentClient
+from agent_test_kit.client.prompt_ai_helper_profiles import get_profile
 from agent_test_kit.models.execution import AgentExecutionResult
 from agent_test_kit.models.report import ScenarioStatus
 from agent_test_kit.reporting.html_report import HtmlReportWriter
@@ -43,6 +45,19 @@ _STASH_KEY = pytest.StashKey[PluginState]()
 
 def pytest_configure(config: pytest.Config) -> None:
     agent_config = AgentTestConfig()
+    profile_env = os.getenv("PROMPT_AI_HELPER_ENV", "").strip()
+    if profile_env:
+        profile = get_profile(profile_env)
+        agent_config = agent_config.model_copy(
+            update={
+                "base_url": profile.base_url,
+                "execute_path": profile.agent_path,
+                "environment": profile.name,
+                "agent_id": "prompt-ai-helper",
+                "model": profile.model,
+                "verify_ssl": profile.verify_ssl,
+            }
+        )
     json_path = config.getoption("--agent-report-json")
     html_path = config.getoption("--agent-report-html")
     writer: JsonReportWriter | None = None
@@ -53,6 +68,10 @@ def pytest_configure(config: pytest.Config) -> None:
             config=agent_config,
             output_path=Path(html_path).with_suffix(".json"),
         )
+    if writer is not None and profile_env:
+        profile = get_profile(profile_env)
+        writer.endpoint_profile = dict(profile.endpoint_rows())
+        writer.expected_mcp_servers = list(profile.mcp_servers)
     config.stash[_STASH_KEY] = PluginState(
         agent_config=agent_config,
         json_writer=writer,

@@ -55,7 +55,11 @@ class AgentClient:
         timeout = httpx.Timeout(self.config.timeout_seconds)
 
         try:
-            async with httpx.AsyncClient(transport=self._transport, timeout=timeout) as client:
+            async with httpx.AsyncClient(
+                transport=self._transport,
+                timeout=timeout,
+                verify=self.config.verify_ssl,
+            ) as client:
                 response = await client.post(
                     self.config.execute_url,
                     json=payload,

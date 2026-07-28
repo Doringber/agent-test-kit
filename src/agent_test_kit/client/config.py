@@ -35,6 +35,7 @@ class AgentTestConfig(BaseSettings):
     branch: str | None = None
     commit: str | None = None
     pipeline_id: str | None = None
+    verify_ssl: bool = Field(default=True, description="Verify TLS certificates")
 
     @property
     def execute_url(self) -> str:

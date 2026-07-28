@@ -208,4 +208,4 @@ def test_html_report_shows_empty_flow_message_without_tool_calls(tmp_path: Path)
     )
 
     assert "flow-empty" in html
-    assert "No tool calls recorded" in html
+    assert "No MCP tool calls recorded" in html

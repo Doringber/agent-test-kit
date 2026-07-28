@@ -197,7 +197,96 @@ Store `reports/` as a CI artifact so reviewers can open the HTML report.
 | [Repo layout](#minimal-repo-layout-consumer) | Where files go in your agent repo |
 | [Reference consumer](#reference-consumer) | `agent-qa-helper` examples |
 | [Markers](#pytest-markers) | `agent_unit`, `agent_e2e`, etc. |
+| [prompt-ai-helper E2E](#prompt-ai-helper-review-pipeline--agent-e2e) | Review hook + Auto model agent |
+| [E2E full flow guide](docs/AGENT_E2E_FULL_FLOW.md) | Write tests, CI steps, best practices |
 | [Public API](#public-api-011) | Import list |
+
+---
+
+## prompt-ai-helper: review pipeline + agent E2E
+
+Use `agent-test-kit` to test **prompt-ai-helper** (Cursor hook target + Auto model `/agent`).
+
+### Endpoints (integration)
+
+| Endpoint | URL |
+|----------|-----|
+| Review API (hook calls this) | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/review` |
+| Health | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/health` |
+| Agent test | `https://prompt-ai-helper-int.nonprod.pango.local/agent` |
+| Stream (SSE) | `https://prompt-ai-helper-int.nonprod.pango.local/stream` |
+
+**Other envs:** `PROMPT_AI_HELPER_ENV=staging` or `development` (see `get_profile()`).
+
+### Run live suite + HTML report
+
+```bash
+export ENABLE_REAL_AGENT_TEST=1
+export PROMPT_AI_HELPER_ENV=integration
+
+pytest tests/test_prompt_ai_helper_integration.py -m agent_e2e -v \
+  --agent-report-json=reports/prompt-ai-helper.json \
+  --agent-report-html=reports/prompt-ai-helper.html
+```
+
+The HTML report includes endpoint table, metric cards, **prompt review** (original vs suggested), and MCP tool-flow strips.
+
+### Test cases (different prompts / MCP tools)
+
+| Case | What it exercises |
+|------|-------------------|
+| `vague_prompt` | Hook improves vague `"test"` → structured prompt |
+| `atlassian_read` | Prompt mentions **atlassian-platform** MCP (Jira read) |
+| `coralogix_logs` | Prompt mentions **coralogix** MCP (logs) |
+| `agent_ask_sanity` | Live `POST /agent` with Auto model, read-only |
+| `real_mcp_tool_call_live` | **Real MCP tool calls** (`echo`, `get_datetime`) |
+| `prompt_injection_review_live` | Golden guard dataset → `/prompt/review` (Prefactor + superagent-guard) |
+
+### Golden prompt-guard dataset
+
+File: `tests/data/golden_prompt_guard.yaml` (schema v2.0).
+
+Design follows [Prefactor golden datasets](https://prefactor.tech/learn/golden-datasets-for-agents): fixed inputs, known-good `golden_outcome`, adversarial + control cases replayed on every change.
+
+Taxonomy aligned with [superagent-guard](https://huggingface.co/datasets/superagent-ai/superagent-guard) `violation_types` (e.g. `prompt_injection_override`, `tool_misuse`, `pii_exfiltration`). Prompts are paraphrased — not copied from the gated HF JSONL.
+
+Optional: import a HF sample after login:
+
+```bash
+huggingface-cli login
+python scripts/sync_superagent_guard_sample.py
+```
+
+Legacy file `tests/data/prompt_injection_cases.yaml` is still supported as fallback.
+
+```bash
+pytest tests/test_prompt_ai_helper_integration.py -m "agent_e2e and agent_security" -v \
+  --agent-report-html=reports/prompt-ai-helper-mcp-live.html
+```
+
+HTML report shows **GOLDEN MET/MISS**, `violation_types` chips, expected classification, and original vs suggested prompt for each case.
+
+### Connected MCP servers in report
+
+When running with `PROMPT_AI_HELPER_ENV=integration`, the HTML report shows:
+
+- Run-level **Connected MCP servers** chips (`atlassian-platform`, `coralogix`)
+- Per-scenario MCP tool-flow strip from **real** `/agent` tool calls
+- Expected vs missing server badges
+
+### Python API
+
+```python
+from agent_test_kit import PromptReviewClient, get_profile, CursorAgentClient, AgentTestConfig
+
+profile = get_profile("integration")
+client = PromptReviewClient(profile)
+await client.health()
+result = await client.review("test", repo_slug="my-repo")
+agent_scenario.attach_execution_result(result)  # in pytest
+```
+
+**Skill:** `.cursor/skills/prompt-ai-helper-e2e/SKILL.md` — full runbook for agents.
 
 ---
 
@@ -541,9 +630,18 @@ The HTML report includes a **visual tool-flow strip** (read/write badges and ser
 
 ---
 
-### Step 12 — Wire into CI
+### Step 12 — Wire into CI (pipline-ai-publisher)
 
-Example (same pattern as `agent-qa-helper/UnitTests.sh`):
+For agents on the **pipline-ai-publisher** pipeline, tests run automatically:
+
+| Phase | Script | Blocks pipeline? |
+|-------|--------|------------------|
+| Build | `run-agent-test-kit.sh build` | No (default `AGENT_TEST_KIT_SOFT_FAIL=true`) |
+| Post-deploy | `run-agent-test-kit.sh post-deploy` | No (uses kubectl port-forward if no URL) |
+
+Hard-gate when stable: set Bitbucket repo variable `AGENT_TEST_KIT_SOFT_FAIL=false`.
+
+Manual / custom CI (same pattern as `agent-qa-helper/UnitTests.sh`):
 
 ```bash
 # Install framework
@@ -649,8 +747,10 @@ from agent_test_kit import (
     AgentTestConfig,
     AgentExecutionResult,
     CleanupManager,
-    JsonReportWriter,
     HtmlReportWriter,
+    JsonReportWriter,
+    PromptReviewClient,
+    get_profile,
     run_verifiers,
     SideEffectVerifier,
     VerificationContext,
