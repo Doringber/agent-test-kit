@@ -1,19 +1,82 @@
-# agent-test-kit
+<p align="center">
+  <img src="docs/assets/readme-banner.png" alt="Agent Test Kit — sci-fi pytest framework for AI agents" width="900">
+</p>
 
-Shared pytest framework for testing Pango AI agents.
+<pre align="center">
+    _                    _       _____         _  __ _  _
+   / \   __ _  ___ _ __ | |_    |_   _|__  ___| |/ _| || |
+  / _ \ / _` |/ _ \ '_ \| __|_____| |/ _ \ / _ \ | |_| || |
+ / ___ \ (_| |  __/ | | | ||_____| |  __/  __/ |  _|__   _|
+/_/   \_\__, |\___|_| |_|\__|    |_|\___|\___|_|_|    |_|
+        |___/
+</pre>
 
-**Agent repos own:** test cases, prompts, fixtures, and environment-specific verifiers.  
-**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, JSON/HTML reports, cleanup, and verifier orchestration.
+<p align="center">
+  <strong>Shared pytest framework for testing AI agents.</strong><br>
+  Mock in CI · live HTTP when you opt in · HTML reports humans actually open.
+</p>
 
-**Current version:** `0.1.1`
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#the-report-is-the-product">Reports</a> ·
+  <a href="#step-by-step-use-in-your-agent-repo">Full guide</a> ·
+  <a href="docs/AGENT_E2E_FULL_FLOW.md">E2E flow</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/pytest-8.2+-0A9EDC?logo=pytest&logoColor=white" alt="pytest">
+  <img src="https://img.shields.io/badge/version-0.1.2-blue" alt="0.1.2">
+</p>
 
 ---
 
-## Quick start — pip install to HTML report
+## The report is the product
 
-Follow these steps in order the first time you use the package in an agent repo.
+Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generates a single self-contained HTML file — tool-flow strips, MCP chips, prompt review diffs, golden guard outcomes — the same UI whether you ran mock tests or live E2E.
 
-### 1. Create a virtualenv and install
+```
+┌─ Agent test report ─────────────────────────────────────────────┐
+│  Agent: billing-agent          Env: integration                 │
+├─────────────────────────────────────────────────────────────────┤
+│  Scenarios 6   Passed 6   Tool calls 14   Tokens 2.1k           │
+├─────────────────────────────────────────────────────────────────┤
+│  MCP tool flow                                                  │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐                   │
+│  │ READ     │ →  │ READ     │ →  │ WRITE    │                   │
+│  │ billing/ │    │ jira/    │    │ jira/    │                   │
+│  │ get_inv… │    │ get_iss… │    │ create…  │                   │
+│  └──────────┘    └──────────┘    └──────────┘                   │
+├─────────────────────────────────────────────────────────────────┤
+│  ▾ Assertions  ▾ Tool calls  ▾ Timeline  ▾ Side effects       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+```bash
+pytest tests/ -v \
+  --agent-report-json=reports/results.json \
+  --agent-report-html=reports/results.html
+
+open reports/results.html
+```
+
+Redaction is on by default — tokens, credentials, and sensitive args never hit disk.
+
+---
+
+## Split of responsibility
+
+**Your agent repo owns:** test cases, prompts, fixtures, domain verifiers, cleanup hooks.
+
+**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, JSON/HTML reports, verifier orchestration.
+
+The pytest plugin loads automatically when installed — no `pytest_plugins` line needed.
+
+---
+
+## Quick start
+
+### Install
 
 ```bash
 python3 -m venv .venv
@@ -21,7 +84,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install --upgrade pip
 ```
 
-**Option A — from Pango CodeArtifact (recommended for CI / internal use):**
+From Pango CodeArtifact (CI / internal):
 
 ```bash
 export CODEARTIFACT_DOMAIN=pango-pypi-server
@@ -36,28 +99,23 @@ aws codeartifact login \
   --repository "${CODEARTIFACT_REPOSITORY}" \
   --region "${AWS_DEFAULT_REGION}"
 
-pip install agent-test-kit==0.1.1 pytest>=8.2 pytest-asyncio>=0.23
+pip install agent-test-kit==0.1.2 pytest>=8.2 pytest-asyncio>=0.23
 ```
 
-**Option B — from a local wheel (dev / offline):**
+From a local wheel (dev / GitHub):
 
 ```bash
 pip install --index-url https://pypi.org/simple \
-  /path/to/agent_test_kit-0.1.1-py3-none-any.whl \
+  /path/to/agent_test_kit-0.1.2-py3-none-any.whl \
   pytest>=8.2 pytest-asyncio>=0.23
 ```
-
-**Verify the install:**
 
 ```bash
 python -c "import agent_test_kit; print(agent_test_kit.__version__)"
 pytest --version
-# agent-test-kit plugin loads automatically — no pytest_plugins line needed
 ```
 
----
-
-### 2. Add `pytest.ini` to your agent repo
+### pytest.ini
 
 ```ini
 [pytest]
@@ -71,11 +129,7 @@ markers =
 addopts = -m "not agent_e2e and not agent_write_action"
 ```
 
----
-
-### 3. Write your first test (mock — no real agent needed)
-
-Create `tests/test_my_agent.py`:
+### First test
 
 ```python
 import httpx
@@ -110,8 +164,6 @@ async def test_billing_read_flow(agent_scenario):
         transport=_FakeTransport(),
     )
     result = await client.execute({"account_id": 12345})
-
-    # Attach result so HTML report includes tool-flow data
     agent_scenario.attach_execution_result(result)
 
     result.assert_success()
@@ -119,106 +171,18 @@ async def test_billing_read_flow(agent_scenario):
     result.assert_read_only()
 ```
 
-> **Tip:** for integration/E2E tests, prefer the `agent_client` or `cursor_agent_client` fixture — it auto-attaches results on every `execute()` so you don't need `attach_execution_result` manually.
-
----
-
-### 4. Run pytest and generate the HTML report
-
-```bash
-mkdir -p reports
-pytest tests/test_my_agent.py -v \
-  --agent-report-json=reports/agent-results.json \
-  --agent-report-html=reports/agent-results.html
-```
-
-Open the report in a browser:
-
-```bash
-open reports/agent-results.html   # macOS
-# xdg-open reports/agent-results.html   # Linux
-```
-
-You should see:
-- Run metadata (agent id, environment, timestamps)
-- A **Tool flow** strip: `READ billing/get_customer_invoices`
-- Expandable tables for assertions, tool args/outputs, and timeline
-
----
-
-### 5. Run against a real agent (optional, opt-in)
-
-Set env vars and enable live tests:
-
-```bash
-export AGENT_TEST_BASE_URL=http://my-agent-int.nonprod.pango.local
-export AGENT_TEST_AGENT_ID=billing-agent
-export AGENT_TEST_ENVIRONMENT=integration
-export ENABLE_REAL_AGENT_TEST=1
-
-pytest tests/test_my_agent_real.py -m agent_e2e \
-  --agent-report-json=reports/live.json \
-  --agent-report-html=reports/live.html
-```
-
-For **Cursor agents** (`POST /agent`), use `cursor_agent_client` instead of `agent_client`:
-
-```python
-@pytest.mark.asyncio
-@pytest.mark.agent_e2e
-async def test_live(cursor_agent_client):
-    result = await cursor_agent_client.execute_prompt(
-        "Summarize open invoices for account 12345"
-    )
-    result.assert_success()
-```
-
----
-
-### 6. Add to CI
-
-```bash
-# Install (CodeArtifact login + pip install agent-test-kit==0.1.1)
-pytest tests/ -m "not agent_e2e and not agent_write_action" -q \
-  --agent-report-json=reports/ci-results.json \
-  --agent-report-html=reports/ci-results.html
-```
-
-Store `reports/` as a CI artifact so reviewers can open the HTML report.
-
----
-
-## Table of contents
-
-| Step | Topic |
-|------|-------|
-| [Quick start](#quick-start--pip-install-to-html-report) | Install pip package → first test → HTML report |
-| [Step 1–12](#step-by-step-use-in-your-agent-repo) | Detailed reference for each feature |
-| [Repo layout](#minimal-repo-layout-consumer) | Where files go in your agent repo |
-| [Reference consumer](#reference-consumer) | `agent-qa-helper` examples |
-| [Markers](#pytest-markers) | `agent_unit`, `agent_e2e`, etc. |
-| [prompt-ai-helper E2E](#prompt-ai-helper-review-pipeline--agent-e2e) | Review hook + Auto model agent |
-| [E2E full flow guide](docs/AGENT_E2E_FULL_FLOW.md) | Write tests, CI steps, best practices |
-| [Public API](#public-api-011) | Import list |
+Use `agent_client` / `cursor_agent_client` fixtures in integration tests — they auto-attach results on every `execute()`.
 
 ---
 
 ## prompt-ai-helper: review pipeline + agent E2E
 
-Use `agent-test-kit` to test **prompt-ai-helper** (Cursor hook target + Auto model `/agent`).
-
-### Endpoints (integration)
-
 | Endpoint | URL |
 |----------|-----|
-| Review API (hook calls this) | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/review` |
+| Review API | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/review` |
 | Health | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/health` |
-| Agent test | `https://prompt-ai-helper-int.nonprod.pango.local/agent` |
+| Agent | `https://prompt-ai-helper-int.nonprod.pango.local/agent` |
 | Stream (SSE) | `https://prompt-ai-helper-int.nonprod.pango.local/stream` |
-
-**Other envs:** `PROMPT_AI_HELPER_ENV=staging` or `development` (see `get_profile()`).
-
-### Run live suite + HTML report
 
 ```bash
 export ENABLE_REAL_AGENT_TEST=1
@@ -229,64 +193,9 @@ pytest tests/test_prompt_ai_helper_integration.py -m agent_e2e -v \
   --agent-report-html=reports/prompt-ai-helper.html
 ```
 
-The HTML report includes endpoint table, metric cards, **prompt review** (original vs suggested), and MCP tool-flow strips.
+Golden guard dataset: `tests/data/golden_prompt_guard.yaml` — fixed inputs, adversarial cases, replayed on every change ([Prefactor golden datasets](https://prefactor.tech/learn/golden-datasets-for-agents), [superagent-guard](https://huggingface.co/datasets/superagent-ai/superagent-guard) taxonomy).
 
-### Test cases (different prompts / MCP tools)
-
-| Case | What it exercises |
-|------|-------------------|
-| `vague_prompt` | Hook improves vague `"test"` → structured prompt |
-| `atlassian_read` | Prompt mentions **atlassian-platform** MCP (Jira read) |
-| `coralogix_logs` | Prompt mentions **coralogix** MCP (logs) |
-| `agent_ask_sanity` | Live `POST /agent` with Auto model, read-only |
-| `real_mcp_tool_call_live` | **Real MCP tool calls** (`echo`, `get_datetime`) |
-| `prompt_injection_review_live` | Golden guard dataset → `/prompt/review` (Prefactor + superagent-guard) |
-
-### Golden prompt-guard dataset
-
-File: `tests/data/golden_prompt_guard.yaml` (schema v2.0).
-
-Design follows [Prefactor golden datasets](https://prefactor.tech/learn/golden-datasets-for-agents): fixed inputs, known-good `golden_outcome`, adversarial + control cases replayed on every change.
-
-Taxonomy aligned with [superagent-guard](https://huggingface.co/datasets/superagent-ai/superagent-guard) `violation_types` (e.g. `prompt_injection_override`, `tool_misuse`, `pii_exfiltration`). Prompts are paraphrased — not copied from the gated HF JSONL.
-
-Optional: import a HF sample after login:
-
-```bash
-huggingface-cli login
-python scripts/sync_superagent_guard_sample.py
-```
-
-Legacy file `tests/data/prompt_injection_cases.yaml` is still supported as fallback.
-
-```bash
-pytest tests/test_prompt_ai_helper_integration.py -m "agent_e2e and agent_security" -v \
-  --agent-report-html=reports/prompt-ai-helper-mcp-live.html
-```
-
-HTML report shows **GOLDEN MET/MISS**, `violation_types` chips, expected classification, and original vs suggested prompt for each case.
-
-### Connected MCP servers in report
-
-When running with `PROMPT_AI_HELPER_ENV=integration`, the HTML report shows:
-
-- Run-level **Connected MCP servers** chips (`atlassian-platform`, `coralogix`)
-- Per-scenario MCP tool-flow strip from **real** `/agent` tool calls
-- Expected vs missing server badges
-
-### Python API
-
-```python
-from agent_test_kit import PromptReviewClient, get_profile, CursorAgentClient, AgentTestConfig
-
-profile = get_profile("integration")
-client = PromptReviewClient(profile)
-await client.health()
-result = await client.review("test", repo_slug="my-repo")
-agent_scenario.attach_execution_result(result)  # in pytest
-```
-
-**Skill:** `.cursor/skills/prompt-ai-helper-e2e/SKILL.md` — full runbook for agents.
+Runbook: [`.cursor/skills/prompt-ai-helper-e2e/SKILL.md`](.cursor/skills/prompt-ai-helper-e2e/SKILL.md) · Full guide: [`docs/AGENT_E2E_FULL_FLOW.md`](docs/AGENT_E2E_FULL_FLOW.md)
 
 ---
 
@@ -294,75 +203,22 @@ agent_scenario.attach_execution_result(result)  # in pytest
 
 ### Step 1 — Install the package
 
-**From CodeArtifact (CI / AWS creds):**
-
-```bash
-export CODEARTIFACT_DOMAIN=pango-pypi-server
-export CODEARTIFACT_DOMAIN_OWNER=609081136822
-export CODEARTIFACT_REPOSITORY=pango-pypi
-export AWS_DEFAULT_REGION=eu-west-1
-
-aws codeartifact login \
-  --tool pip \
-  --domain "${CODEARTIFACT_DOMAIN}" \
-  --domain-owner "${CODEARTIFACT_DOMAIN_OWNER}" \
-  --repository "${CODEARTIFACT_REPOSITORY}" \
-  --region "${AWS_DEFAULT_REGION}"
-
-pip install agent-test-kit==0.1.1
-```
-
-**From a local wheel (dev / before publish):**
-
-```bash
-pip install --index-url https://pypi.org/simple \
-  /path/to/agent_test_kit-0.1.1-py3-none-any.whl
-```
-
-**Verify:**
-
-```bash
-python -c "import agent_test_kit; print(agent_test_kit.__version__)"
-# 0.1.1
-```
-
-Copy `agent-qa-helper/scripts/install_agent_test_kit.sh` into your repo if you want the same CI/local fallback logic (CodeArtifact → sibling wheel → explicit `AGENT_TEST_KIT_WHEEL`).
-
----
+Same as [Quick start](#quick-start). Copy `agent-qa-helper/scripts/install_agent_test_kit.sh` for CI/local fallback (CodeArtifact → sibling wheel → `AGENT_TEST_KIT_WHEEL`).
 
 ### Step 2 — Add test dependencies
 
-In `requirements-dev.txt`:
-
 ```text
+# requirements-dev.txt
 pytest>=8.2
 pytest-asyncio>=0.23
-agent-test-kit==0.1.1   # or install via script in CI before pytest
+agent-test-kit==0.1.2
 ```
-
-The pytest plugin loads automatically when the package is installed (no extra `pytest_plugins` line needed).
-
----
 
 ### Step 3 — Configure pytest
 
-In `pytest.ini`:
+See [pytest.ini](#pytestini) above.
 
-```ini
-[pytest]
-markers =
-    agent_unit: fast tests with mock transport (default in CI)
-    agent_integration: tests against a deployed agent
-    agent_e2e: live HTTP tests (opt-in)
-    agent_write_action: creates real external side effects (opt-in)
-
-addopts = -m "not agent_e2e and not agent_write_action"
-
-asyncio_mode = strict
-asyncio_default_fixture_loop_scope = function
-```
-
-**Environment variables** (read by `AgentTestConfig`, prefix `AGENT_TEST_`):
+Environment variables (`AGENT_TEST_` prefix):
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
@@ -371,18 +227,12 @@ asyncio_default_fixture_loop_scope = function
 | `AGENT_TEST_ENVIRONMENT` | `integration` | Report metadata |
 | `AGENT_TEST_TIMEOUT_SECONDS` | `900` | HTTP timeout |
 
-Optional: create `.env` in the agent repo (do not commit secrets).
-
----
-
 ### Step 4 — Pick the right client
 
 | Your agent exposes | Use | Endpoint |
 |--------------------|-----|----------|
-| JSON execute API + structured `trace.tool_calls` | `AgentClient` | Default `/api/v1/execute` (configurable) |
+| JSON execute API + structured `trace.tool_calls` | `AgentClient` | Default `/api/v1/execute` |
 | Cursor agent-base `POST /agent` + `stream-json` | `CursorAgentClient` | Always `/agent` |
-
-**Generic JSON agent:**
 
 ```python
 from agent_test_kit import AgentClient, AgentTestConfig
@@ -395,8 +245,6 @@ client = AgentClient(AgentTestConfig(
 result = await client.execute({"account_id": 12345})
 ```
 
-**Cursor agent:**
-
 ```python
 from agent_test_kit import CursorAgentClient, AgentTestConfig
 
@@ -408,54 +256,11 @@ client = CursorAgentClient(AgentTestConfig(
 result = await client.execute_prompt("Summarize open invoices for account 12345")
 ```
 
----
-
 ### Step 5 — Write fast unit tests (mock transport)
 
-Use a mock `httpx` transport so CI never calls real agents.
+See [First test](#first-test). Reference: `agent-qa-helper/tests/test_agent_test_kit.py`
 
-```python
-import json
-import httpx
-import pytest
-from agent_test_kit import AgentClient, AgentTestConfig
-
-
-class _FakeAgentTransport(httpx.AsyncBaseTransport):
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={
-            "success": True,
-            "run_id": "run_demo",
-            "response": {"summary": "ok"},
-            "trace": {
-                "tool_calls": [
-                    {"server": "billing", "name": "get_customer_invoices", "operation_kind": "read"},
-                ],
-            },
-        })
-
-
-@pytest.mark.asyncio
-@pytest.mark.agent_unit
-async def test_billing_read_flow() -> None:
-    client = AgentClient(
-        AgentTestConfig(base_url="http://test", agent_id="billing-agent"),
-        transport=_FakeAgentTransport(),
-    )
-    result = await client.execute({"account_id": 12345})
-
-    result.assert_success()
-    result.assert_tool_called("get_customer_invoices", server="billing")
-    result.assert_read_only()
-```
-
-**Reference:** `agent-qa-helper/tests/test_agent_test_kit.py`
-
----
-
-### Step 6 — Use pytest fixtures (recommended)
-
-When the package is installed, these fixtures are available:
+### Step 6 — Use pytest fixtures
 
 | Fixture | Purpose |
 |---------|---------|
@@ -471,14 +276,10 @@ When the package is installed, these fixtures are available:
 async def test_flow(agent_client):
     result = await agent_client.execute({"account_id": 12345})
     result.assert_success()
-    result.assert_tool_sequence([
-        ("billing", "get_customer_invoices"),
-    ])
+    result.assert_tool_sequence([("billing", "get_customer_invoices")])
 ```
 
----
-
-### Step 7 — Assert workflows (common patterns)
+### Step 7 — Assert workflows
 
 ```python
 result.assert_success()
@@ -498,20 +299,9 @@ result.assert_no_duplicate_tool_writes()
 result.assert_no_failed_tool_calls()
 ```
 
-Custom tool → server/kind mapping when trace metadata is incomplete:
+### Step 8 — Verify real side effects
 
-```python
-AgentTestConfig(
-    tool_server_mappings={"get_customer_invoices": "billing"},
-    tool_operation_mappings={"get_customer_invoices": ToolOperationKind.READ},
-)
-```
-
----
-
-### Step 8 — Verify real side effects (your repo implements this)
-
-Implement `SideEffectVerifier` in **your** agent repo (not in agent-test-kit):
+Implement `SideEffectVerifier` in **your** agent repo:
 
 ```python
 from agent_test_kit import SideEffectVerifier, VerificationContext, VerificationResult
@@ -522,89 +312,48 @@ class InvoiceCreatedVerifier:
 
     async def verify(self, context: VerificationContext) -> VerificationResult:
         invoice_id = context.metadata["invoice_id"]
-        # query DB / MCP independently of agent trace
         return VerificationResult(passed=True, message=f"invoice {invoice_id} exists")
 ```
 
-Run verifiers from a test:
-
 ```python
-async def test_write_flow(cursor_agent_client, agent_scenario, agent_cleanup):
-    result = await cursor_agent_client.execute_prompt("Create invoice...")
-    result.assert_success()
-
-    summary = await agent_scenario.verify(
-        [InvoiceCreatedVerifier()],
-        metadata={"invoice_id": 999},
-        timeout_seconds=15,
-    )
-    assert summary.passed
+summary = await agent_scenario.verify(
+    [InvoiceCreatedVerifier()],
+    metadata={"invoice_id": 999},
+    timeout_seconds=15,
+)
+assert summary.passed
 ```
 
-**Reference:** `agent-qa-helper/tests/verifiers/mcp_verifiers.py`
-
----
+Reference: `agent-qa-helper/tests/verifiers/mcp_verifiers.py`
 
 ### Step 9 — Register cleanup before writes
-
-For tests that create Jira issues, PR comments, DB rows, etc.:
 
 ```python
 async def test_write_with_cleanup(cursor_agent_client, agent_cleanup):
     agent_cleanup.register(cleanup_jira_issue, issue_key="PNG-123")
-    agent_cleanup.register(cleanup_pr_comment, pr_id=29)
-
     result = await cursor_agent_client.execute_prompt("...")
     result.assert_success()
     # cleanup runs even if assertions fail
 ```
 
-Use `async with CleanupManager()` or the `agent_cleanup` fixture (async tests only).
-
----
-
-### Step 10 — Live E2E (opt-in, not in default CI)
-
-Gate live tests so `pytest` in CI stays fast and safe:
-
-```python
-import os
-import pytest
-
-def require_live_agent() -> None:
-    if os.getenv("ENABLE_REAL_AGENT_TEST", "") != "1":
-        pytest.skip("Set ENABLE_REAL_AGENT_TEST=1")
-
-
-@pytest.mark.agent_e2e
-@pytest.mark.asyncio
-async def test_live_health(real_agent_config):
-    require_live_agent()
-    ...
-```
-
-Run read-only live suite:
+### Step 10 — Live E2E (opt-in)
 
 ```bash
-ENABLE_REAL_AGENT_TEST=1 \
-AGENT_TEST_BASE_URL=http://my-agent-int.nonprod.pango.local \
-AGENT_TEST_ENVIRONMENT=integration \
-pytest tests/test_my_agent_real.py -m "agent_e2e and not agent_write_action" \
+export ENABLE_REAL_AGENT_TEST=1
+export AGENT_TEST_BASE_URL=http://my-agent-int.nonprod.pango.local
+export AGENT_TEST_ENVIRONMENT=integration
+
+pytest tests/test_my_agent_real.py -m agent_e2e \
   --agent-report-json=reports/live.json \
   --agent-report-html=reports/live.html
 ```
 
-Run write tests (creates real side effects — use only in controlled env):
+Write tests (real side effects):
 
 ```bash
-ENABLE_REAL_AGENT_TEST=1 \
-ENABLE_AGENT_WRITE_ACTIONS=1 \
+ENABLE_REAL_AGENT_TEST=1 ENABLE_AGENT_WRITE_ACTIONS=1 \
 pytest tests/test_my_agent_real.py -m agent_write_action
 ```
-
-**Reference:** `agent-qa-helper/tests/test_agent_test_kit_real.py`, `tests/conftest.py`, `tests/support/agent_e2e.py`
-
----
 
 ### Step 11 — Generate reports
 
@@ -614,96 +363,38 @@ pytest tests/ \
   --agent-report-html=reports/agent-results.html
 ```
 
-Reports are redacted (tokens, credentials, sensitive args/outputs).
+Tool-flow data appears when you attach execution results — via fixtures, `agent_scenario.attach_execution_result(result)`, or `store_execution_result(...)`.
 
-**Tool flow data in reports:** scenarios are recorded for every test, but **tool calls, timeline, and assertions** appear only when the test attaches an execution result. Use one of:
-
-| Approach | When to use |
-|----------|-------------|
-| `agent_client` / `cursor_agent_client` fixture | Recommended — auto-attaches on `execute()` |
-| `agent_scenario.attach_execution_result(result)` | Manual `AgentClient(...)` without fixture |
-| `store_execution_result(config, nodeid, result)` | Advanced / custom pytest hooks |
-
-If you construct `AgentClient(...)` directly without `on_result` or `attach_execution_result`, the HTML report will show an empty tool-flow section even when the agent ran successfully.
-
-The HTML report includes a **visual tool-flow strip** (read/write badges and server/tool sequence) plus expandable tables for arguments, outputs, timeline, and verifiers.
-
----
-
-### Step 12 — Wire into CI (pipline-ai-publisher)
-
-For agents on the **pipline-ai-publisher** pipeline, tests run automatically:
-
-| Phase | Script | Blocks pipeline? |
-|-------|--------|------------------|
-| Build | `run-agent-test-kit.sh build` | No (default `AGENT_TEST_KIT_SOFT_FAIL=true`) |
-| Post-deploy | `run-agent-test-kit.sh post-deploy` | No (uses kubectl port-forward if no URL) |
-
-Hard-gate when stable: set Bitbucket repo variable `AGENT_TEST_KIT_SOFT_FAIL=false`.
-
-Manual / custom CI (same pattern as `agent-qa-helper/UnitTests.sh`):
+### Step 12 — Wire into CI
 
 ```bash
-# Install framework
-bash scripts/install_agent_test_kit.sh
-
-# Fast unit tests only
-pytest tests/ -m "not agent_e2e and not agent_write_action" -q
-
-# Optional nightly: live read-only
-# ENABLE_REAL_AGENT_TEST=1 pytest -m agent_e2e ...
+pytest tests/ -m "not agent_e2e and not agent_write_action" -q \
+  --agent-report-json=reports/ci-results.json \
+  --agent-report-html=reports/ci-results.html
 ```
+
+Store `reports/` as a CI artifact.
+
+For **pipline-ai-publisher** agents: `run-agent-test-kit.sh build` / `post-deploy`. Hard-gate with `AGENT_TEST_KIT_SOFT_FAIL=false`.
 
 ---
 
-## Minimal repo layout (consumer)
+## Minimal repo layout
 
 ```text
 my-agent/
-├── agent.yaml                 # agent_id, version (your metadata)
 ├── pytest.ini
 ├── requirements-dev.txt
-├── scripts/
-│   └── install_agent_test_kit.sh
+├── scripts/install_agent_test_kit.sh
 └── tests/
-    ├── conftest.py            # live E2E fixtures (optional)
-    ├── test_my_agent.py       # mock / unit tests
-    ├── test_my_agent_real.py  # gated live E2E (optional)
-    ├── support/               # prompts, MCP helpers
-    └── verifiers/             # SideEffectVerifier implementations
+    ├── conftest.py
+    ├── test_my_agent.py
+    ├── test_my_agent_real.py
+    ├── support/
+    └── verifiers/
 ```
 
----
-
-## Reference consumer
-
-**agent-qa-helper** is the reference integration:
-
-| File | What it shows |
-|------|----------------|
-| `tests/test_agent_test_kit.py` | Mock transport + flow assertions |
-| `tests/test_agent_test_kit_real.py` | Live read-only + write/replay E2E |
-| `scripts/install_agent_test_kit.sh` | CodeArtifact / wheel install |
-| `tests/verifiers/mcp_verifiers.py` | Independent MCP verifiers |
-
----
-
-## Framework development (this repo)
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-pytest --cov=agent_test_kit --cov-fail-under=85
-bash scripts/build-package.sh
-bash scripts/verify-package.sh
-bash scripts/publish-codeartifact.sh   # manual publish
-```
-
-Deterministic local acceptance (no external writes):
-
-```bash
-pytest -q tests/test_task4_pr_review_acceptance.py
-```
+Reference consumer: **agent-qa-helper** (`tests/test_agent_test_kit.py`, `tests/test_agent_test_kit_real.py`).
 
 ---
 
@@ -722,23 +413,19 @@ pytest -q tests/test_task4_pr_review_acceptance.py
 
 ---
 
-## Publishing results to a dashboard
+## Framework development
 
-```python
-from agent_test_kit import HttpResultPublisher, ResultPublisherConfig
-
-publisher = HttpResultPublisher(ResultPublisherConfig(
-    dashboard_url="https://dashboard.example/results",
-    token_env="AGENT_TEST_DASHBOARD_TOKEN",
-))
-publisher.publish(report)
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest --cov=agent_test_kit --cov-fail-under=85
+bash scripts/build-package.sh
+bash scripts/verify-package.sh
 ```
-
-Set `AGENT_TEST_DASHBOARD_URL` and `AGENT_TEST_DASHBOARD_TOKEN` in the environment.
 
 ---
 
-## Public API (0.1.1)
+## Public API
 
 ```python
 from agent_test_kit import (
