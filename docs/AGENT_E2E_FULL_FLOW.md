@@ -1,6 +1,6 @@
 # Agent E2E testing — full flow, how to write tests, CI setup
 
-Step-by-step guide for using **agent-test-kit** in a Pango agent repo: local tests → post-deploy CI → S3 HTML report.
+Step-by-step guide for using **agent-test-kit** in an agent repo: local tests → post-deploy CI → S3 HTML report.
 
 **Reference implementation:** `agent-prompt-ai-helper` (build #14, 20 live E2E tests).
 
@@ -153,7 +153,7 @@ async def test_agent_read_only_live(cursor_agent_client, agent_scenario) -> None
 
 ```bash
 export ENABLE_REAL_AGENT_TEST=1
-export AGENT_TEST_BASE_URL=https://your-agent-int.nonprod.pango.local
+export AGENT_TEST_BASE_URL=https://your-agent-int.example.com
 export AGENT_TEST_ENVIRONMENT=integration
 export AGENT_TEST_AGENT_ID=your-agent
 

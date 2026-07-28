@@ -5,9 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-: "${CODEARTIFACT_DOMAIN:=pango-pypi-server}"
-: "${CODEARTIFACT_DOMAIN_OWNER:=609081136822}"
-: "${CODEARTIFACT_REPOSITORY:=pango-pypi}"
+: "${CODEARTIFACT_DOMAIN:?Set CODEARTIFACT_DOMAIN}"
+: "${CODEARTIFACT_DOMAIN_OWNER:?Set CODEARTIFACT_DOMAIN_OWNER}"
+: "${CODEARTIFACT_REPOSITORY:?Set CODEARTIFACT_REPOSITORY}"
 : "${AWS_DEFAULT_REGION:=eu-west-1}"
 
 if [[ ! -d dist ]] || [[ -z "$(ls -A dist 2>/dev/null)" ]]; then

@@ -13,7 +13,6 @@ _KNOWN_SERVER_PREFIXES = (
     "qase",
     "browserstack",
     "coralogix",
-    "pango",
     "sql",
     "bill",
 )

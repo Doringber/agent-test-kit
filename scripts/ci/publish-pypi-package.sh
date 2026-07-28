@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Build, validate, and publish agent-test-kit to CodeArtifact.
-# Follows the Pango cicd_for_python_package / pango-automation-infrastructure pattern.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -8,9 +7,9 @@ cd "${ROOT}"
 
 source "${ROOT}/scripts/ci/setup-aws-oidc.sh"
 
-DOMAIN="${CODEARTIFACT_DOMAIN:-pango-pypi-server}"
-DOMAIN_OWNER="${CODEARTIFACT_DOMAIN_OWNER:-609081136822}"
-REPO="${CODEARTIFACT_REPOSITORY:-pango-pypi}"
+DOMAIN="${CODEARTIFACT_DOMAIN:?Set CODEARTIFACT_DOMAIN}"
+DOMAIN_OWNER="${CODEARTIFACT_DOMAIN_OWNER:?Set CODEARTIFACT_DOMAIN_OWNER}"
+REPO="${CODEARTIFACT_REPOSITORY:?Set CODEARTIFACT_REPOSITORY}"
 REGION="${AWS_DEFAULT_REGION}"
 PKG_VERSION="$(tr -d '[:space:]' < VERSION)"
 

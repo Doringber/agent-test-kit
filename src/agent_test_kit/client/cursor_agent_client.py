@@ -1,4 +1,4 @@
-"""HTTP client for Pango Cursor agent-base /agent endpoints."""
+"""HTTP client for Cursor agent-base /agent endpoints."""
 
 from __future__ import annotations
 

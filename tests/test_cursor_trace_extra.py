@@ -284,7 +284,7 @@ def test_stream_extracts_current_cursor_nested_mcp_arguments() -> None:
                     "serverIdentifier": "bitbucket",
                     "toolName": "bitbucket_get_pullrequest_by_id",
                     "args": {
-                        "workspace": "pango_dev",
+                        "workspace": "acme_dev",
                         "repo_slug": "agent-qa-helper",
                         "pullrequest_id": 29,
                     },
@@ -298,7 +298,7 @@ def test_stream_extracts_current_cursor_nested_mcp_arguments() -> None:
     assert trace.tool_calls[0].server == "bitbucket"
     assert trace.tool_calls[0].name == "bitbucket_get_pullrequest_by_id"
     assert trace.tool_calls[0].arguments == {
-        "workspace": "pango_dev",
+        "workspace": "acme_dev",
         "repo_slug": "agent-qa-helper",
         "pullrequest_id": 29,
     }

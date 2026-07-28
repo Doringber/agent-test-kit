@@ -391,7 +391,7 @@ def trace_from_cursor_response(
     server_mappings: dict[str, str] | None = None,
     operation_mappings: dict[str, ToolOperationKind] | None = None,
 ) -> AgentTrace:
-    """Build trace from a Pango /agent JSON response."""
+    """Build trace from a /agent JSON response."""
     nested_trace = body.get("trace")
     if isinstance(nested_trace, dict):
         redacted_trace = redact_value(nested_trace)

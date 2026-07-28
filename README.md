@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#agent-assertions-reference">Assertions</a> ·
   <a href="#the-report-is-the-product">Reports</a> ·
   <a href="#step-by-step-use-in-your-agent-repo">Full guide</a> ·
   <a href="docs/AGENT_E2E_FULL_FLOW.md">E2E flow</a>
@@ -84,25 +85,13 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install --upgrade pip
 ```
 
-From Pango CodeArtifact (CI / internal):
+From PyPI (when published):
 
 ```bash
-export CODEARTIFACT_DOMAIN=pango-pypi-server
-export CODEARTIFACT_DOMAIN_OWNER=609081136822
-export CODEARTIFACT_REPOSITORY=pango-pypi
-export AWS_DEFAULT_REGION=eu-west-1
-
-aws codeartifact login \
-  --tool pip \
-  --domain "${CODEARTIFACT_DOMAIN}" \
-  --domain-owner "${CODEARTIFACT_DOMAIN_OWNER}" \
-  --repository "${CODEARTIFACT_REPOSITORY}" \
-  --region "${AWS_DEFAULT_REGION}"
-
-pip install agent-test-kit==0.1.2 pytest>=8.2 pytest-asyncio>=0.23
+pip install agent-test-kit pytest>=8.2 pytest-asyncio>=0.23
 ```
 
-From a local wheel (dev / GitHub):
+From a local wheel (dev):
 
 ```bash
 pip install --index-url https://pypi.org/simple \
@@ -175,14 +164,211 @@ Use `agent_client` / `cursor_agent_client` fixtures in integration tests — the
 
 ---
 
+## Agent assertions reference
+
+Every assertion runs on `AgentExecutionResult` (returned by `execute()` / `execute_prompt()`). Failures are recorded in `result.assertion_outcomes` and appear in the HTML report.
+
+### Execution
+
+| Assertion | What it checks |
+|-----------|----------------|
+| `assert_success()` | Agent run completed with `success=True` |
+
+```python
+result.assert_success()
+```
+
+### Tool presence
+
+| Assertion | What it checks |
+|-----------|----------------|
+| `assert_tool_called(name, server=None, *, status, arguments, argument_predicate)` | Tool was invoked; optional status filter, argument subset match, or custom predicate |
+| `assert_tool_not_called(name, server=None)` | Tool was never invoked |
+
+```python
+from agent_test_kit.models.enums import ToolCallStatus
+
+result.assert_tool_called(
+    "get_customer_invoices",
+    server="billing",
+    status=ToolCallStatus.SUCCESS,
+    arguments={"account_id": 12345},
+    argument_predicate=lambda args: args["limit"] <= 100,
+)
+result.assert_tool_not_called("merge_pull_request", server="bitbucket")
+```
+
+### Tool order & sequence
+
+| Assertion | What it checks |
+|-----------|----------------|
+| `assert_tool_order(before, after, *, status, before_status, after_status)` | One tool ran before another (by index in trace) |
+| `assert_tool_sequence(sequence, *, allow_additional_read_tools=False, status)` | Full workflow order; supports flexible steps (see below) |
+| `assert_read_before_write(read_tool, write_tool)` | Shorthand for `assert_tool_order` — read step before write step |
+
+Tuple form: `(server, tool_name)` e.g. `("jira", "create_issue")`.
+
+```python
+result.assert_tool_order(
+    before=("bitbucket", "get_pr_diff"),
+    after=("jira", "create_issue"),
+)
+result.assert_read_before_write(
+    read_tool=("bitbucket", "get_pr_diff"),
+    write_tool=("jira", "create_issue"),
+)
+result.assert_tool_sequence([
+    ("bitbucket", "get_pullrequest_by_id"),
+    ("jira", "create_issue"),
+])
+```
+
+**Flexible sequence steps** — import from `agent_test_kit`:
+
+| Type | Meaning |
+|------|---------|
+| `("server", "tool")` | Required step (shorthand tuple) |
+| `ToolStep(server, name, *, status, arguments, argument_predicate)` | Required step with filters |
+| `OptionalStep(ToolStep(...))` | Step may be skipped |
+| `AnyOfStep(ToolStep(...), ToolStep(...))` | One of several alternatives |
+
+```python
+from agent_test_kit import ToolStep, OptionalStep, AnyOfStep
+
+result.assert_tool_sequence(
+    [
+        ToolStep("billing", "get_invoices", status=ToolCallStatus.SUCCESS),
+        OptionalStep(ToolStep("billing", "enrich")),
+        AnyOfStep(ToolStep("jira", "create_issue"), ToolStep("jira", "update_issue")),
+    ],
+    allow_additional_read_tools=True,  # extra READ calls between steps OK
+)
+```
+
+### Call counts & workflow size
+
+| Assertion | What it checks |
+|-----------|----------------|
+| `assert_tool_call_count(name, *, server, exact, min_calls, max_calls, status, arguments, argument_predicate)` | How many times a tool ran (provide `exact`, or `min_calls` / `max_calls`) |
+| `assert_max_workflow_steps(maximum)` | Total tool calls in trace ≤ maximum |
+| `assert_max_tool_attempts(maximum, *, tool_name, server)` | No single call exceeded attempt number |
+| `assert_max_retries(maximum, *, tool_name, server)` | Retries ≤ maximum (`attempt - 1`) |
+
+```python
+result.assert_tool_call_count("search", server="jira", min_calls=1, max_calls=3)
+result.assert_tool_call_count("create_issue", server="jira", exact=1)
+result.assert_max_workflow_steps(8)
+result.assert_max_retries(1)
+result.assert_max_tool_attempts(2, tool_name="search", server="jira")
+```
+
+### Safety & write discipline
+
+| Assertion | What it checks |
+|-----------|----------------|
+| `assert_read_only()` | No WRITE or UNKNOWN operation_kind in trace |
+| `assert_no_duplicate_tool_writes()` | Same write tool not called twice |
+| `assert_write_tool_called_once(server, tool)` | Exactly one write to that tool |
+| `assert_no_failed_tool_calls(tool_name=None, *, server)` | No ERROR or TIMEOUT status |
+
+```python
+result.assert_read_only()
+result.assert_no_duplicate_tool_writes()
+result.assert_write_tool_called_once(server="jira", tool="create_issue")
+result.assert_no_failed_tool_calls()
+result.assert_no_failed_tool_calls("search", server="jira")
+```
+
+### Repeated execution (idempotency)
+
+Use `run_repeatedly()` when the same input + idempotency key must produce stable behavior across N runs.
+
+```python
+from agent_test_kit import run_repeatedly
+
+aggregate = await run_repeatedly(
+    agent_client,
+    input={"account_id": 12345},
+    runs=3,
+    idempotency_key="stable-key",
+)
+```
+
+| Assertion (on `RepeatedExecutionResult`) | What it checks |
+|------------------------------------------|----------------|
+| `assert_stable_success()` | Every run succeeded |
+| `assert_no_duplicate_writes(*, identity=None)` | No duplicate write across runs (same server/tool/args) |
+| `assert_responses_stable(*, comparator=None)` | All `response` payloads match |
+| `assert_traces_stable(*, comparator=None)` | All traces match |
+
+```python
+aggregate.assert_stable_success()
+aggregate.assert_no_duplicate_writes()
+aggregate.assert_responses_stable()
+aggregate.assert_traces_stable()
+```
+
+### Regression cases (YAML-driven)
+
+Load cases with `load_regression_cases(path)`; evaluate with `case.evaluate(result)`.
+
+| `expected_outcome` field | Maps to |
+|--------------------------|---------|
+| `success` | `assert_success` semantics |
+| `required_tools` | `assert_tool_called` per entry |
+| `forbidden_tools` | `assert_tool_not_called` per entry |
+| `order` / `tool_order` | `assert_tool_sequence` |
+| `counts` / `tool_counts` | `assert_tool_call_count` per entry |
+| `argument_expectations` | `assert_tool_called` with argument checks |
+| `no_failed_calls` | `assert_no_failed_tool_calls` |
+| `read_only` | `assert_read_only` |
+
+```python
+from agent_test_kit import load_regression_cases
+
+cases = load_regression_cases("tests/data/regression_cases.yaml")
+for case in cases:
+    result = await agent_client.execute(case.input)
+    evaluation = case.evaluate(result)
+    evaluation.assert_passed()
+```
+
+Mark regression tests with `@pytest.mark.agent_regression`.
+
+### Typical PR-review workflow (all together)
+
+```python
+result.assert_success()
+result.assert_tool_sequence([
+    ("bitbucket", "get_pullrequest_by_id"),
+    ("bitbucket", "get_pr_diff"),
+    ("jira", "create_issue"),
+], allow_additional_read_tools=False)
+result.assert_read_before_write(
+    read_tool=("bitbucket", "get_pr_diff"),
+    write_tool=("jira", "create_issue"),
+)
+result.assert_write_tool_called_once(server="jira", tool="create_issue")
+result.assert_tool_not_called("merge_pullrequest", server="bitbucket")
+result.assert_max_retries(1)
+result.assert_no_duplicate_tool_writes()
+result.assert_no_failed_tool_calls()
+```
+
+Every assertion above is captured in `result.assertion_outcomes` and rendered in the HTML report under **Assertions**.
+
+---
+
 ## prompt-ai-helper: review pipeline + agent E2E
 
 | Endpoint | URL |
 |----------|-----|
-| Review API | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/review` |
-| Health | `https://prompt-ai-helper-int.nonprod.pango.local/prompt/health` |
-| Agent | `https://prompt-ai-helper-int.nonprod.pango.local/agent` |
-| Stream (SSE) | `https://prompt-ai-helper-int.nonprod.pango.local/stream` |
+| Review API | `{base_url}/prompt/review` |
+| Health | `{base_url}/prompt/health` |
+| Agent | `{base_url}/agent` |
+| Stream (SSE) | `{base_url}/stream` |
+
+Set `AGENT_TEST_BASE_URL` or use a built-in profile via `PROMPT_AI_HELPER_ENV=integration`.
 
 ```bash
 export ENABLE_REAL_AGENT_TEST=1
@@ -222,7 +408,7 @@ Environment variables (`AGENT_TEST_` prefix):
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
-| `AGENT_TEST_BASE_URL` | `http://my-agent-int.nonprod.pango.local` | Agent base URL |
+| `AGENT_TEST_BASE_URL` | `http://my-agent-int.example.com` | Agent base URL |
 | `AGENT_TEST_AGENT_ID` | `billing-agent` | Report metadata |
 | `AGENT_TEST_ENVIRONMENT` | `integration` | Report metadata |
 | `AGENT_TEST_TIMEOUT_SECONDS` | `900` | HTTP timeout |
@@ -238,7 +424,7 @@ Environment variables (`AGENT_TEST_` prefix):
 from agent_test_kit import AgentClient, AgentTestConfig
 
 client = AgentClient(AgentTestConfig(
-    base_url="http://billing-agent-int.nonprod.pango.local",
+    base_url="http://billing-agent-int.example.com",
     agent_id="billing-agent",
     environment="integration",
 ))
@@ -249,7 +435,7 @@ result = await client.execute({"account_id": 12345})
 from agent_test_kit import CursorAgentClient, AgentTestConfig
 
 client = CursorAgentClient(AgentTestConfig(
-    base_url="http://qa-helper-int.nonprod.pango.local",
+    base_url="http://qa-helper-int.example.com",
     agent_id="qa-helper",
     environment="integration",
 ))
@@ -281,19 +467,19 @@ async def test_flow(agent_client):
 
 ### Step 7 — Assert workflows
 
+See [Agent assertions reference](#agent-assertions-reference) for the full catalog. Quick example:
+
 ```python
 result.assert_success()
-result.assert_tool_called("jira_create_issue", server="jira")
-result.assert_tool_not_called("bitbucket_merge_pull_request", server="bitbucket")
-result.assert_write_tool_called_once(server="jira", tool="jira_create_issue")
-result.assert_read_before_write(
-    read_tool=("bitbucket", "bitbucket_get_pr_diff"),
-    write_tool=("jira", "jira_create_issue"),
-)
 result.assert_tool_sequence([
-    ("bitbucket", "bitbucket_get_pullrequest_by_id"),
-    ("jira", "jira_create_issue"),
-], allow_additional_read_tools=False)
+    ("bitbucket", "get_pullrequest_by_id"),
+    ("jira", "create_issue"),
+])
+result.assert_read_before_write(
+    read_tool=("bitbucket", "get_pr_diff"),
+    write_tool=("jira", "create_issue"),
+)
+result.assert_write_tool_called_once(server="jira", tool="create_issue")
 result.assert_max_retries(1)
 result.assert_no_duplicate_tool_writes()
 result.assert_no_failed_tool_calls()
@@ -340,7 +526,7 @@ async def test_write_with_cleanup(cursor_agent_client, agent_cleanup):
 
 ```bash
 export ENABLE_REAL_AGENT_TEST=1
-export AGENT_TEST_BASE_URL=http://my-agent-int.nonprod.pango.local
+export AGENT_TEST_BASE_URL=http://my-agent-int.example.com
 export AGENT_TEST_ENVIRONMENT=integration
 
 pytest tests/test_my_agent_real.py -m agent_e2e \
@@ -433,11 +619,17 @@ from agent_test_kit import (
     CursorAgentClient,
     AgentTestConfig,
     AgentExecutionResult,
+    AnyOfStep,
     CleanupManager,
     HtmlReportWriter,
     JsonReportWriter,
+    OptionalStep,
     PromptReviewClient,
+    RepeatedExecutionResult,
+    ToolStep,
     get_profile,
+    load_regression_cases,
+    run_repeatedly,
     run_verifiers,
     SideEffectVerifier,
     VerificationContext,

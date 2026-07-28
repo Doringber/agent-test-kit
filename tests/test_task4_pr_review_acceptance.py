@@ -77,7 +77,7 @@ async def test_deterministic_pr_review_acceptance_flow(tmp_path: Path) -> None:
 
             first, second = repeated.results
             expected_pr_arguments = {
-                "workspace": "pango_dev",
+                "workspace": "acme_dev",
                 "repository": "payments-api",
                 "pull_request_id": 42,
                 "run_marker": IDEMPOTENCY_KEY,

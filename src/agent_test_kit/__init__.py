@@ -1,4 +1,4 @@
-"""Shared pytest framework for testing Pango AI agents."""
+"""Shared pytest framework for testing AI agents."""
 
 from __future__ import annotations
 

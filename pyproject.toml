@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-test-kit"
 dynamic = ["version"]
-description = "Shared pytest framework for testing Pango AI agents"
+description = "Shared pytest framework for testing AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "LicenseRef-Proprietary"
-authors = [{ name = "Pango" }]
-keywords = ["pytest", "ai-agents", "mcp", "testing", "pango"]
+authors = [{ name = "Doringber" }]
+keywords = ["pytest", "ai-agents", "mcp", "testing"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",

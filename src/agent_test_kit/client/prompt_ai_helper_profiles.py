@@ -48,17 +48,17 @@ class PromptAiHelperProfile(BaseModel):
 PROFILES: dict[str, PromptAiHelperProfile] = {
     "integration": PromptAiHelperProfile(
         name="integration",
-        base_url="https://prompt-ai-helper-int.nonprod.pango.local",
+        base_url="https://prompt-ai-helper-int.example.com",
         mcp_servers=["atlassian-platform", "coralogix"],
     ),
     "staging": PromptAiHelperProfile(
         name="staging",
-        base_url="https://prompt-ai-helper-stg.nonprod.pango.local",
+        base_url="https://prompt-ai-helper-stg.example.com",
         mcp_servers=["atlassian-platform", "coralogix"],
     ),
     "development": PromptAiHelperProfile(
         name="development",
-        base_url="https://prompt-ai-helper-dev.nonprod.pango.local",
+        base_url="https://prompt-ai-helper-dev.example.com",
         mcp_servers=["atlassian-platform", "coralogix"],
     ),
 }

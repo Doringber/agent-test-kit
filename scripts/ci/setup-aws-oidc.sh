@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Configure AWS OIDC credentials for Bitbucket Pipelines (Pango standard).
+# Configure AWS OIDC credentials for Bitbucket Pipelines.
 set -euo pipefail
 
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-west-1}"

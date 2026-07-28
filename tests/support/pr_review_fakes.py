@@ -21,7 +21,7 @@ CRITICAL_DESCRIPTION = (
     "src/payments.py:18 interpolates account_id into an SQL statement before execution."
 )
 PR_REVIEW_REQUEST: dict[str, Any] = {
-    "workspace": "pango_dev",
+    "workspace": "acme_dev",
     "repository": "payments-api",
     "pull_request_id": 42,
     "request": "Review this pull request and report critical issues; do not merge.",
@@ -717,7 +717,7 @@ class ReviewStateVerifier:
         review = JsonRpcMcpClient(self._bitbucket_url).call(
             "bitbucket_get_pr_review_state",
             {
-                "workspace": "pango_dev",
+                "workspace": "acme_dev",
                 "repository": "payments-api",
                 "pull_request_id": 42,
                 "run_marker": self._idempotency_key,

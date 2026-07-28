@@ -1,5 +1,4 @@
-# Pango Python package pipeline — aligned with pango-automation-infrastructure /
-# cicd_for_python_package (Lambda image, OIDC, CodeArtifact publish).
+# Python package pipeline — build, test, publish to CodeArtifact via OIDC.
 definitions:
   version: 1.0.0
   steps:
