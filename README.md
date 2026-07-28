@@ -389,7 +389,7 @@ Runbook: [`.cursor/skills/prompt-ai-helper-e2e/SKILL.md`](.cursor/skills/prompt-
 
 ### Step 1 — Install the package
 
-Same as [Quick start](#quick-start). Copy `agent-qa-helper/scripts/install_agent_test_kit.sh` for CI/local fallback (CodeArtifact → sibling wheel → `AGENT_TEST_KIT_WHEEL`).
+Same as [Quick start](#quick-start).
 
 ### Step 2 — Add test dependencies
 
@@ -444,7 +444,7 @@ result = await client.execute_prompt("Summarize open invoices for account 12345"
 
 ### Step 5 — Write fast unit tests (mock transport)
 
-See [First test](#first-test). Reference: `agent-qa-helper/tests/test_agent_test_kit.py`
+See [First test](#first-test). More examples: [`examples/consumer_test_example.py`](examples/consumer_test_example.py), [`tests/test_flow_assertions.py`](tests/test_flow_assertions.py).
 
 ### Step 6 — Use pytest fixtures
 
@@ -510,7 +510,7 @@ summary = await agent_scenario.verify(
 assert summary.passed
 ```
 
-Reference: `agent-qa-helper/tests/verifiers/mcp_verifiers.py`
+Implement verifiers in **your** agent repo — see [Step 8 example](#step-8--verify-real-side-effects) above.
 
 ### Step 9 — Register cleanup before writes
 
@@ -559,9 +559,9 @@ pytest tests/ -m "not agent_e2e and not agent_write_action" -q \
   --agent-report-html=reports/ci-results.html
 ```
 
-Store `reports/` as a CI artifact.
+Store `reports/` as a CI artifact (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in this repo).
 
-For **pipline-ai-publisher** agents: `run-agent-test-kit.sh build` / `post-deploy`. Hard-gate with `AGENT_TEST_KIT_SOFT_FAIL=false`.
+Optional: upload HTML to S3 after E2E — see [E2E full flow guide](docs/AGENT_E2E_FULL_FLOW.md#step-9--verify-ci-output).
 
 ---
 
@@ -571,7 +571,7 @@ For **pipline-ai-publisher** agents: `run-agent-test-kit.sh build` / `post-deplo
 my-agent/
 ├── pytest.ini
 ├── requirements-dev.txt
-├── scripts/install_agent_test_kit.sh
+├── .github/workflows/ci.yml
 └── tests/
     ├── conftest.py
     ├── test_my_agent.py
@@ -580,7 +580,7 @@ my-agent/
     └── verifiers/
 ```
 
-Reference consumer: **agent-qa-helper** (`tests/test_agent_test_kit.py`, `tests/test_agent_test_kit_real.py`).
+Reference examples in **this repo**: [`examples/consumer_test_example.py`](examples/consumer_test_example.py), [`tests/test_prompt_ai_helper_integration.py`](tests/test_prompt_ai_helper_integration.py).
 
 ---
 

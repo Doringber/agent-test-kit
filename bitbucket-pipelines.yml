@@ -1,4 +1,4 @@
-# Python package pipeline — build, test, publish to CodeArtifact via OIDC.
+# Optional: publish to a private PyPI registry (AWS CodeArtifact, etc.) via OIDC.
 definitions:
   version: 1.0.0
   steps:
@@ -15,7 +15,7 @@ definitions:
           - coverage.xml
 
     - step: &publish-pypi-package
-        name: Publish PyPI package to CodeArtifact
+        name: Publish package to private registry
         image: public.ecr.aws/lambda/python:3.11
         oidc: true
         script:

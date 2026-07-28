@@ -65,7 +65,7 @@ REVIEW_CASES: list[dict[str, str]] = [
             "READ-ONLY: Use atlassian-platform MCP to search Jira for one open issue "
             "in project QA. No writes. Summarize in 3 bullets."
         ),
-        "repo_slug": "agent-qa-helper",
+        "repo_slug": "my-agent",
         "expect_in_suggestion": "READ",
     },
     {
@@ -74,7 +74,7 @@ REVIEW_CASES: list[dict[str, str]] = [
             "READ-ONLY: Use coralogix MCP get_datetime tool, then describe how you would "
             "fetch recent error logs for qa-helper. No writes."
         ),
-        "repo_slug": "agent-qa-helper",
+        "repo_slug": "my-agent",
         "expect_in_suggestion": "coralogix",
     },
 ]

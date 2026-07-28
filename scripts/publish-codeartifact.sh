@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish agent-test-kit to AWS CodeArtifact via twine.
+# Publish agent-test-kit to a private PyPI registry via twine.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +15,7 @@ if [[ ! -d dist ]] || [[ -z "$(ls -A dist 2>/dev/null)" ]]; then
   exit 1
 fi
 
-echo "Login to AWS CodeArtifact (twine)..."
+echo "Login to private PyPI registry (twine)..."
 aws codeartifact login \
   --tool twine \
   --domain "${CODEARTIFACT_DOMAIN}" \
@@ -43,7 +43,7 @@ export TWINE_REPOSITORY_URL="$(
     --region "${AWS_DEFAULT_REGION}"
 )"
 
-echo "Uploading package to CodeArtifact..."
+echo "Uploading package..."
 twine upload --verbose --repository-url "${TWINE_REPOSITORY_URL}" dist/*
 
 VERSION="$(tr -d '[:space:]' < VERSION)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, validate, and publish agent-test-kit to CodeArtifact.
+# Build, validate, and publish agent-test-kit to a private PyPI registry.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -21,7 +21,7 @@ if [[ -n "${BITBUCKET_TAG:-}" ]]; then
   fi
 fi
 
-echo "Login to AWS CodeArtifact (pip)..."
+echo "Login to private PyPI registry (pip)..."
 aws codeartifact login \
   --tool pip \
   --repository "${REPO}" \
@@ -44,7 +44,7 @@ if aws codeartifact list-package-versions \
   exit 0
 fi
 
-echo "Login to AWS CodeArtifact (twine)..."
+echo "Login to private PyPI registry (twine)..."
 aws codeartifact login \
   --tool twine \
   --repository "${REPO}" \
