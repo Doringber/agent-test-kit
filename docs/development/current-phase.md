@@ -53,17 +53,32 @@ Measurements: [`spike/results/measurements.json`](../../spike/results/measuremen
 | **B — Determinism** | **NOT CLOSED.** Same-OS 10/10 on all servers and on `crossos.py`; cross-OS **not executed** |
 | **C — Architecture integrity** | **PASS.** INV-017 holds; ADR-002 through ADR-006 unchallenged |
 
-**Why Gate B is open.** Docker is installed but its daemon will not start headlessly; WSL has
-only the busybox `docker-desktop` distro; GitHub Actions requires **pushing a branch to a
-public repo**. The requirement was not weakened and the deterministic sequence was not
-altered. **No divergence was observed**, so `spike/results/m5_divergence_evidence.json` is
-deliberately absent.
+**Why Gate B is open.** The cross-platform run has **not executed**. Verified against GitHub
+on 2026-08-09: the repository has one registered workflow (`CI`, superseded) and one run ever
+(a failure on `main`, 2026-07-28). No M5 run exists.
 
-Ready to run, needing exactly one authorized push:
+**No divergence was observed**, so `spike/results/m5_divergence_evidence.json` is deliberately
+absent. Creating it would imply a difference was found.
 
-- `.github/workflows/m5-crossos.yml` — **installed**, `workflow_dispatch` only, fires on nothing until run manually
+Progress: the work is now pushed to **`origin/daniel`** (`797a8e5`), which includes
+`.github/workflows/m5-crossos.yml`.
+
+**Remaining blocker, precisely.** GitHub only allows a `workflow_dispatch` workflow to be
+dispatched once the file exists on the **default branch**. `m5-crossos.yml` is on `daniel`,
+not on `main`, so dispatch returns:
+
+```
+HTTP 404: workflow m5-crossos.yml not found on the default branch
+```
+
+Landing it on `main` requires approval and is not taken unilaterally. Once merged, the
+workflow can be dispatched against any ref.
+
+Ready and unchanged:
+
+- `.github/workflows/m5-crossos.yml` — `workflow_dispatch` only; fires on nothing until run manually
 - `spike/crossos.py` — fixed world, seed, 10-step sequence, Server C only, no Node dependency
-- `spike/results/m5_reference.json` — reference hash **`80c6e57f69a0d807`**
+- `spike/results/m5_reference.json` — reference hash **`80c6e57f69a0d807`** (Windows 11, CPython 3.14.4, 10/10 identical)
 
 ### Closed items
 
