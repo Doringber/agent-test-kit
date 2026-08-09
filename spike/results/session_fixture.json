@@ -1,0 +1,217 @@
+{
+  "tools_list": {
+    "fixture": [
+      {
+        "name": "create_issue",
+        "description": "Create an issue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "project",
+            "title"
+          ]
+        }
+      },
+      {
+        "name": "get_issue",
+        "description": "Get one issue by id",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      {
+        "name": "update_issue",
+        "description": "Update an issue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      {
+        "name": "delete_issue",
+        "description": "Delete an issue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      {
+        "name": "list_issues",
+        "description": "List issues in a project",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            },
+            "offset": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "project"
+          ]
+        }
+      },
+      {
+        "name": "search_issues",
+        "description": "Search issues with a query expression",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    ]
+  },
+  "interactions": [
+    {
+      "seq": 1,
+      "server": "fixture",
+      "tool": "list_issues",
+      "request": {
+        "project": "QA"
+      },
+      "response": {
+        "issues": [
+          {
+            "id": "FX-001",
+            "project": "QA",
+            "title": "Existing issue",
+            "status": "open",
+            "created_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "total": 1
+      },
+      "status": "success"
+    },
+    {
+      "seq": 2,
+      "server": "fixture",
+      "tool": "create_issue",
+      "request": {
+        "project": "QA",
+        "title": "Recorded issue"
+      },
+      "response": {
+        "id": "FX-002",
+        "project": "QA",
+        "title": "Recorded issue",
+        "status": "open",
+        "created_at": "2026-01-01T00:00:02Z"
+      },
+      "status": "success"
+    },
+    {
+      "seq": 3,
+      "server": "fixture",
+      "tool": "get_issue",
+      "request": {
+        "id": "FX-002"
+      },
+      "response": {
+        "id": "FX-002",
+        "project": "QA",
+        "title": "Recorded issue",
+        "status": "open",
+        "created_at": "2026-01-01T00:00:02Z"
+      },
+      "status": "success"
+    },
+    {
+      "seq": 4,
+      "server": "fixture",
+      "tool": "update_issue",
+      "request": {
+        "id": "FX-002",
+        "status": "closed"
+      },
+      "response": {
+        "id": "FX-002",
+        "project": "QA",
+        "title": "Recorded issue",
+        "status": "closed",
+        "created_at": "2026-01-01T00:00:02Z"
+      },
+      "status": "success"
+    },
+    {
+      "seq": 5,
+      "server": "fixture",
+      "tool": "delete_issue",
+      "request": {
+        "id": "FX-002"
+      },
+      "response": {
+        "deleted": "FX-002"
+      },
+      "status": "success"
+    },
+    {
+      "seq": 6,
+      "server": "fixture",
+      "tool": "search_issues",
+      "request": {
+        "query": "project=QA"
+      },
+      "response": {
+        "issues": [
+          {
+            "id": "FX-001",
+            "project": "QA",
+            "title": "Existing issue",
+            "status": "open",
+            "created_at": "2026-01-01T00:00:01Z"
+          }
+        ]
+      },
+      "status": "success"
+    }
+  ]
+}

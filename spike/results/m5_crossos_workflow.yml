@@ -1,0 +1,68 @@
+# M5 cross-OS determinism. READY TO RUN, NOT ACTIVE.
+#
+# Not placed in .github/workflows/ because M0.1 scope is "spike and its documentation
+# /results" only, and because activating it requires pushing a branch to a public
+# repository, which is an outward-facing action needing explicit approval.
+#
+# To use:
+#   1. cp spike/results/m5_crossos_workflow.yml .github/workflows/m5-crossos.yml
+#   2. git switch -c m5-crossos && git add -A && git commit
+#   3. git push -u origin m5-crossos          <-- REQUIRES APPROVAL
+#   4. Run the workflow (workflow_dispatch) and compare the printed hash against
+#      spike/results/m5_reference.json
+#
+# Gate: the Linux hash must equal the Windows hash in m5_reference.json.
+# If they differ: DO NOT normalize until green. Capture evidence and escalate
+# (see docs/development/milestone-0.1.md, "If hashes differ").
+
+name: M5 cross-OS determinism
+
+on:
+  workflow_dispatch:
+
+jobs:
+  determinism:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the only dependency
+        run: pip install pyyaml
+
+      - name: Run fixed World + seed + tool-call sequence
+        working-directory: spike
+        run: python crossos.py
+
+      - name: Compare against the recorded reference hash
+        working-directory: spike
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob, json, sys
+          ref = json.load(open("results/m5_reference.json"))
+          mine = json.load(open(glob.glob("results/m5_*.json")[0])) \
+              if not glob.glob("results/m5_linux.json") else None
+          import platform
+          cur = json.load(open(f"results/m5_{platform.system().lower()}.json"))
+          same = cur["hash"] == ref["hash"]
+          print(f"reference ({ref['platform']['system']}): {ref['hash']}")
+          print(f"this run  ({cur['platform']['system']}): {cur['hash']}")
+          print(f"same-OS distinct hashes: {cur['distinct_hashes']} (must be 1)")
+          print("MATCH" if same else "DIFFER")
+          sys.exit(0 if same and cur["distinct_hashes"] == 1 else 1)
+          PY
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-${{ matrix.os }}
+          path: spike/results/m5_*.json

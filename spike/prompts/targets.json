@@ -1,0 +1,120 @@
+{
+  "_comment": "Scripted tool-call sequences per target server. See FINDINGS D-1 for why the agent is scripted rather than an LLM. No vendor-specific code exists anywhere in the engine; only these scripts and answers differ.",
+  "targets": [
+    {
+      "name": "Server C (fixture)",
+      "server_id": "fixture",
+      "upstream": ["${PY}", "fixture_server/server.py"],
+      "clean": [],
+      "answers": {
+        "fixture/delete_issue": {"id_request_path": "$.id"}
+      },
+      "scripts": {
+        "record": [
+          {"tool": "list_issues",   "args": {"project": "QA"}},
+          {"tool": "create_issue",  "args": {"project": "QA", "title": "Recorded issue"}},
+          {"tool": "get_issue",     "args": {"id": "FX-002"}},
+          {"tool": "update_issue",  "args": {"id": "FX-002", "status": "closed"}},
+          {"tool": "delete_issue",  "args": {"id": "FX-002"}},
+          {"tool": "search_issues", "args": {"query": "project=QA"}}
+        ],
+        "exact": [
+          {"tool": "list_issues", "args": {"project": "QA"}}
+        ],
+        "write": [
+          {"tool": "create_issue", "args": {"project": "QA", "title": "Fresh unrecorded"}},
+          {"tool": "list_issues",  "args": {"project": "QA"}},
+          {"tool": "update_issue", "args": {"id": "FX-001", "status": "closed"}},
+          {"tool": "get_issue",    "args": {"id": "FX-001"}},
+          {"tool": "delete_issue", "args": {"id": "FX-001"}},
+          {"tool": "list_issues",  "args": {"project": "QA"}}
+        ],
+        "unsupported": [
+          {"tool": "search_issues",    "args": {"query": "project=QA AND status=open"}},
+          {"tool": "list_issues",      "args": {"project": "QA", "assignee": "bob"}},
+          {"tool": "nonexistent_tool", "args": {}}
+        ]
+      },
+      "expect": {
+        "write_tools": ["create_issue"],
+        "read_tools": ["list_issues"],
+        "collection_key": "issues",
+        "minted_prefix": "IS-M",
+        "stale_path": "$.total",
+        "divergence_classes": ["OUT_OF_CONTRACT", "UNKNOWN_TOOL"]
+      }
+    },
+
+    {
+      "name": "Server A (memory, real 3rd-party)",
+      "server_id": "memory",
+      "upstream": ["npx.cmd", "-y", "@modelcontextprotocol/server-memory"],
+      "clean": ["results/_memA.json"],
+      "env": {"MEMORY_FILE_PATH": "results/_memA.json"},
+      "_answers_note": "Deliberately EMPTY. A previous run forced create_entities into l2_core via answers; the engine then produced a structurally malformed entity with divergence=None. See FINDINGS F-1. The honest configuration lets inference decide.",
+      "answers": {},
+      "scripts": {
+        "record": [
+          {"tool": "create_entities", "args": {"entities": [{"name": "alpha", "entityType": "svc", "observations": ["one"]}]}},
+          {"tool": "read_graph",      "args": {}},
+          {"tool": "open_nodes",      "args": {"names": ["alpha"]}},
+          {"tool": "search_nodes",    "args": {"query": "alpha"}}
+        ],
+        "exact": [
+          {"tool": "read_graph", "args": {}}
+        ],
+        "write": [
+          {"tool": "create_entities", "args": {"entities": [{"name": "beta", "entityType": "svc", "observations": ["two"]}]}},
+          {"tool": "read_graph",      "args": {}}
+        ],
+        "unsupported": [
+          {"tool": "search_nodes",     "args": {"query": "never-recorded-query"}},
+          {"tool": "nonexistent_tool", "args": {}}
+        ]
+      },
+      "expect": {
+        "write_tools": ["create_entities"],
+        "read_tools": ["read_graph"],
+        "collection_key": "entities",
+        "minted_prefix": "NO-M",
+        "stale_path": null,
+        "divergence_classes": ["OUT_OF_CONTRACT", "UNKNOWN_TOOL", "NO_RECORDED_INTERACTION"]
+      }
+    },
+
+    {
+      "name": "Server B (sqlite, real 3rd-party)",
+      "server_id": "sqlite",
+      "upstream": ["npx.cmd", "-y", "mcp-server-sqlite-npx", "results/_m0.db"],
+      "clean": ["results/_m0.db"],
+      "answers": {},
+      "scripts": {
+        "record": [
+          {"tool": "create_table", "args": {"query": "CREATE TABLE issues (id TEXT PRIMARY KEY, project TEXT, title TEXT)"}},
+          {"tool": "write_query",  "args": {"query": "INSERT INTO issues VALUES ('SQ-001','QA','Existing')"}},
+          {"tool": "list_tables",  "args": {}},
+          {"tool": "read_query",   "args": {"query": "SELECT * FROM issues"}}
+        ],
+        "exact": [
+          {"tool": "read_query", "args": {"query": "SELECT * FROM issues"}}
+        ],
+        "write": [
+          {"tool": "write_query", "args": {"query": "INSERT INTO issues VALUES ('SQ-002','QA','Unrecorded')"}},
+          {"tool": "read_query",  "args": {"query": "SELECT * FROM issues"}}
+        ],
+        "unsupported": [
+          {"tool": "read_query",       "args": {"query": "SELECT * FROM issues WHERE project='QA'"}},
+          {"tool": "nonexistent_tool", "args": {}}
+        ]
+      },
+      "expect": {
+        "write_tools": ["write_query"],
+        "read_tools": ["read_query"],
+        "collection_key": "rows",
+        "minted_prefix": "__never__",
+        "stale_path": null,
+        "divergence_classes": ["OUT_OF_CONTRACT", "UNKNOWN_TOOL", "NO_RECORDED_INTERACTION"]
+      }
+    }
+  ]
+}

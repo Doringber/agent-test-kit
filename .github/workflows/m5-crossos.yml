@@ -1,0 +1,68 @@
+# M5 cross-OS determinism gate (Milestone 0.1, Gate B).
+#
+# Manual dispatch only: this never fires on push, and adding the file triggers nothing.
+#
+# Validates the deterministic WORLD model, not external MCP packages. Server C only,
+# so there is no Node or npx dependency. Same World, same seed, same ordered tool-call
+# sequence, same engine semantics on every platform.
+#
+# Reference hash (Windows 11, CPython 3.14.4): 80c6e57f69a0d807
+#   -> spike/results/m5_reference.json
+#
+# If a platform's hash differs, DO NOT modify canonicalization or serialization.
+# The job uploads m5_<os>.json for every platform; use them to build
+# spike/results/m5_divergence_evidence.json and escalate.
+# See docs/development/milestone-0.1.md, "If hashes differ".
+
+name: M5 cross-OS determinism
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  determinism:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the only dependency
+        run: pip install pyyaml
+
+      - name: Run fixed World + seed + tool-call sequence
+        working-directory: spike
+        run: python crossos.py
+
+      - name: Compare against the reference hash
+        working-directory: spike
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, platform, sys
+          ref = json.load(open("results/m5_reference.json"))
+          cur = json.load(open(f"results/m5_{platform.system().lower()}.json"))
+          print(f"reference ({ref['platform']['system']} py{ref['platform']['python']}): {ref['hash']}")
+          print(f"this run  ({cur['platform']['system']} py{cur['platform']['python']}): {cur['hash']}")
+          print(f"same-OS distinct hashes over 10 runs: {cur['distinct_hashes']} (must be 1)")
+          ok = cur["hash"] == ref["hash"] and cur["distinct_hashes"] == 1
+          print("RESULT: " + ("MATCH - Gate B pass for this platform" if ok else "DIFFER - escalate, do not normalize"))
+          sys.exit(0 if ok else 1)
+          PY
+
+      - name: Upload determinism evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-${{ matrix.os }}
+          path: spike/results/m5_*.json

@@ -1,0 +1,482 @@
+{
+  "m1_in_contract_correctness_pct": 100.0,
+  "m2_out_of_contract_fabrication_pct": 0.0,
+  "m3_divergence_classification_pct": 100.0,
+  "m4_manual_decisions": {
+    "median": 1.0,
+    "max": 2,
+    "per_tool": {
+      "fixture/create_issue": 0,
+      "fixture/get_issue": 0,
+      "fixture/update_issue": 0,
+      "fixture/delete_issue": 1,
+      "fixture/list_issues": 0,
+      "fixture/search_issues": 1,
+      "memory/create_entities": 1,
+      "memory/create_relations": 1,
+      "memory/add_observations": 1,
+      "memory/delete_entities": 1,
+      "memory/delete_observations": 1,
+      "memory/delete_relations": 1,
+      "memory/read_graph": 1,
+      "memory/search_nodes": 1,
+      "memory/open_nodes": 2,
+      "sqlite/read_query": 1,
+      "sqlite/write_query": 2,
+      "sqlite/create_table": 1,
+      "sqlite/list_tables": 1,
+      "sqlite/describe_table": 2
+    }
+  },
+  "m5_determinism": {
+    "Server C (fixture)": {
+      "distinct_hashes": 1,
+      "hash": "68c695c896c1b88f"
+    },
+    "Server A (memory, real 3rd-party)": {
+      "distinct_hashes": 1,
+      "hash": "4b306215ac5c93af"
+    },
+    "Server B (sqlite, real 3rd-party)": {
+      "distinct_hashes": 1,
+      "hash": "38acc4c6f8642a33"
+    }
+  },
+  "m6_latency_ms": {
+    "Server C (fixture)": {
+      "p50": 1.801,
+      "p95": 2.481
+    },
+    "Server A (memory, real 3rd-party)": {
+      "p50": 1.359,
+      "p95": 2.149
+    },
+    "Server B (sqlite, real 3rd-party)": {
+      "p50": 0.994,
+      "p95": 1.796
+    }
+  },
+  "m7_nine_step_coverage": {
+    "Server C (fixture)": "9/9",
+    "Server A (memory, real 3rd-party)": "6/9",
+    "Server B (sqlite, real 3rd-party)": "6/9"
+  },
+  "m8_extend_loop": "see FINDINGS.md",
+  "m9_spike_line_count": 2728,
+  "m10_structural_fidelity": {
+    "structural_fidelity_pct": 100.0,
+    "candidates_evaluated": 4,
+    "accepted": 1,
+    "rejected": 3,
+    "rejection_reason_distribution": {
+      "V1": 3
+    },
+    "per_server": {
+      "Server C (fixture)": {
+        "candidates": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "rejection_reasons": {},
+        "validations": {
+          "fixture/create_issue": {
+            "passed": [
+              "V1",
+              "V2",
+              "V3",
+              "V4",
+              "V5",
+              "V6"
+            ],
+            "failed": [],
+            "reasons": {}
+          }
+        },
+        "l1_reasons": {
+          "fixture/search_issues": "not a create tool"
+        }
+      },
+      "Server A (memory, real 3rd-party)": {
+        "candidates": 3,
+        "accepted": 0,
+        "rejected": 3,
+        "rejection_reasons": {
+          "V1": 3
+        },
+        "validations": {
+          "memory/create_entities": {
+            "passed": [
+              "V3",
+              "V4",
+              "V5",
+              "V6"
+            ],
+            "failed": [
+              "V1",
+              "V2"
+            ],
+            "reasons": {
+              "V1": "no observed entity of this type; entity_template is empty",
+              "V2": "id field 'id' does not resolve to a scalar on every observed entity"
+            }
+          },
+          "memory/create_relations": {
+            "passed": [
+              "V3",
+              "V4",
+              "V6"
+            ],
+            "failed": [
+              "V1",
+              "V2",
+              "V5"
+            ],
+            "reasons": {
+              "V1": "no observed entity of this type; entity_template is empty",
+              "V2": "id field 'id' does not resolve to a scalar on every observed entity",
+              "V5": "no recorded create interaction to round-trip against"
+            }
+          },
+          "memory/add_observations": {
+            "passed": [
+              "V3",
+              "V4",
+              "V6"
+            ],
+            "failed": [
+              "V1",
+              "V2",
+              "V5"
+            ],
+            "reasons": {
+              "V1": "no observed entity of this type; entity_template is empty",
+              "V2": "id field 'id' does not resolve to a scalar on every observed entity",
+              "V5": "no recorded create interaction to round-trip against"
+            }
+          }
+        },
+        "l1_reasons": {
+          "memory/create_entities": "no observed entity of this type; entity_template is empty",
+          "memory/create_relations": "no observed entity of this type; entity_template is empty",
+          "memory/add_observations": "no observed entity of this type; entity_template is empty",
+          "memory/delete_entities": "not a create tool",
+          "memory/delete_observations": "not a create tool",
+          "memory/delete_relations": "not a create tool",
+          "memory/read_graph": "not a create tool",
+          "memory/search_nodes": "not a create tool",
+          "memory/open_nodes": "not a create tool"
+        }
+      },
+      "Server B (sqlite, real 3rd-party)": {
+        "candidates": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "rejection_reasons": {},
+        "validations": {},
+        "l1_reasons": {
+          "sqlite/read_query": "not a create tool",
+          "sqlite/write_query": "not a create tool",
+          "sqlite/create_table": "not a create tool",
+          "sqlite/list_tables": "not a create tool",
+          "sqlite/describe_table": "not a create tool"
+        }
+      }
+    }
+  },
+  "f1_structural_fidelity": {
+    "Server C (fixture)": {
+      "ok": true,
+      "note": ""
+    },
+    "Server A (memory, real 3rd-party)": {
+      "ok": true,
+      "note": ""
+    },
+    "Server B (sqlite, real 3rd-party)": {
+      "ok": true,
+      "note": ""
+    }
+  },
+  "per_server": [
+    {
+      "server": "Server C (fixture)",
+      "steps": {
+        "1_record": true,
+        "2_exact_replay": true,
+        "7_determinism": true,
+        "3_unrecorded_write": true,
+        "4_overlay_mutation": true,
+        "5_read_after_write": true,
+        "6_reset": true,
+        "8_unsupported_issued": true,
+        "9_classified_divergence": true
+      },
+      "notes": [],
+      "fidelity": {
+        "fixture/create_issue": "l2_core",
+        "fixture/get_issue": "l2_core",
+        "fixture/update_issue": "l2_core",
+        "fixture/delete_issue": "l2_core",
+        "fixture/list_issues": "l2_core",
+        "fixture/search_issues": "l1"
+      },
+      "decisions_per_tool": {
+        "fixture/create_issue": 0,
+        "fixture/get_issue": 0,
+        "fixture/update_issue": 0,
+        "fixture/delete_issue": 1,
+        "fixture/list_issues": 0,
+        "fixture/search_issues": 1
+      },
+      "m10": {
+        "candidates": 1,
+        "accepted": 1,
+        "rejected": 0,
+        "rejection_reasons": {},
+        "validations": {
+          "fixture/create_issue": {
+            "passed": [
+              "V1",
+              "V2",
+              "V3",
+              "V4",
+              "V5",
+              "V6"
+            ],
+            "failed": [],
+            "reasons": {}
+          }
+        },
+        "l1_reasons": {
+          "fixture/search_issues": "not a create tool"
+        }
+      },
+      "outcome_hashes": [
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f",
+        "68c695c896c1b88f"
+      ],
+      "structural_fidelity_ok": true,
+      "structural_note": "",
+      "stale_paths_observed": [
+        "$.total"
+      ],
+      "stale_ok": true,
+      "divergences_observed": [
+        "OUT_OF_CONTRACT",
+        "OUT_OF_CONTRACT",
+        "UNKNOWN_TOOL"
+      ],
+      "m1_in_contract_correct": 100.0,
+      "m2_fabrication_rate": 0.0,
+      "m6_latency_p50": 1.801,
+      "m6_latency_p95": 2.481,
+      "m7_nine_step": "9/9"
+    },
+    {
+      "server": "Server A (memory, real 3rd-party)",
+      "steps": {
+        "1_record": true,
+        "2_exact_replay": true,
+        "7_determinism": true,
+        "3_unrecorded_write": false,
+        "4_overlay_mutation": false,
+        "5_read_after_write": false,
+        "6_reset": true,
+        "8_unsupported_issued": true,
+        "9_classified_divergence": true
+      },
+      "notes": [],
+      "fidelity": {
+        "memory/create_entities": "l1",
+        "memory/create_relations": "l1",
+        "memory/add_observations": "l1",
+        "memory/delete_entities": "l1",
+        "memory/delete_observations": "l1",
+        "memory/delete_relations": "l1",
+        "memory/read_graph": "l1",
+        "memory/search_nodes": "l1",
+        "memory/open_nodes": "l1"
+      },
+      "decisions_per_tool": {
+        "memory/create_entities": 1,
+        "memory/create_relations": 1,
+        "memory/add_observations": 1,
+        "memory/delete_entities": 1,
+        "memory/delete_observations": 1,
+        "memory/delete_relations": 1,
+        "memory/read_graph": 1,
+        "memory/search_nodes": 1,
+        "memory/open_nodes": 2
+      },
+      "m10": {
+        "candidates": 3,
+        "accepted": 0,
+        "rejected": 3,
+        "rejection_reasons": {
+          "V1": 3
+        },
+        "validations": {
+          "memory/create_entities": {
+            "passed": [
+              "V3",
+              "V4",
+              "V5",
+              "V6"
+            ],
+            "failed": [
+              "V1",
+              "V2"
+            ],
+            "reasons": {
+              "V1": "no observed entity of this type; entity_template is empty",
+              "V2": "id field 'id' does not resolve to a scalar on every observed entity"
+            }
+          },
+          "memory/create_relations": {
+            "passed": [
+              "V3",
+              "V4",
+              "V6"
+            ],
+            "failed": [
+              "V1",
+              "V2",
+              "V5"
+            ],
+            "reasons": {
+              "V1": "no observed entity of this type; entity_template is empty",
+              "V2": "id field 'id' does not resolve to a scalar on every observed entity",
+              "V5": "no recorded create interaction to round-trip against"
+            }
+          },
+          "memory/add_observations": {
+            "passed": [
+              "V3",
+              "V4",
+              "V6"
+            ],
+            "failed": [
+              "V1",
+              "V2",
+              "V5"
+            ],
+            "reasons": {
+              "V1": "no observed entity of this type; entity_template is empty",
+              "V2": "id field 'id' does not resolve to a scalar on every observed entity",
+              "V5": "no recorded create interaction to round-trip against"
+            }
+          }
+        },
+        "l1_reasons": {
+          "memory/create_entities": "no observed entity of this type; entity_template is empty",
+          "memory/create_relations": "no observed entity of this type; entity_template is empty",
+          "memory/add_observations": "no observed entity of this type; entity_template is empty",
+          "memory/delete_entities": "not a create tool",
+          "memory/delete_observations": "not a create tool",
+          "memory/delete_relations": "not a create tool",
+          "memory/read_graph": "not a create tool",
+          "memory/search_nodes": "not a create tool",
+          "memory/open_nodes": "not a create tool"
+        }
+      },
+      "outcome_hashes": [
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af",
+        "4b306215ac5c93af"
+      ],
+      "structural_fidelity_ok": true,
+      "structural_note": "",
+      "stale_paths_observed": [],
+      "divergences_observed": [
+        "OUT_OF_CONTRACT",
+        "UNKNOWN_TOOL"
+      ],
+      "m1_in_contract_correct": 100.0,
+      "m2_fabrication_rate": 0.0,
+      "m6_latency_p50": 1.359,
+      "m6_latency_p95": 2.149,
+      "m7_nine_step": "6/9"
+    },
+    {
+      "server": "Server B (sqlite, real 3rd-party)",
+      "steps": {
+        "1_record": true,
+        "2_exact_replay": true,
+        "7_determinism": true,
+        "3_unrecorded_write": false,
+        "4_overlay_mutation": false,
+        "5_read_after_write": false,
+        "6_reset": true,
+        "8_unsupported_issued": true,
+        "9_classified_divergence": true
+      },
+      "notes": [],
+      "fidelity": {
+        "sqlite/read_query": "l1",
+        "sqlite/write_query": "l1",
+        "sqlite/create_table": "l1",
+        "sqlite/list_tables": "l1",
+        "sqlite/describe_table": "l1"
+      },
+      "decisions_per_tool": {
+        "sqlite/read_query": 1,
+        "sqlite/write_query": 2,
+        "sqlite/create_table": 1,
+        "sqlite/list_tables": 1,
+        "sqlite/describe_table": 2
+      },
+      "m10": {
+        "candidates": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "rejection_reasons": {},
+        "validations": {},
+        "l1_reasons": {
+          "sqlite/read_query": "not a create tool",
+          "sqlite/write_query": "not a create tool",
+          "sqlite/create_table": "not a create tool",
+          "sqlite/list_tables": "not a create tool",
+          "sqlite/describe_table": "not a create tool"
+        }
+      },
+      "outcome_hashes": [
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33",
+        "38acc4c6f8642a33"
+      ],
+      "structural_fidelity_ok": true,
+      "structural_note": "",
+      "stale_paths_observed": [],
+      "divergences_observed": [
+        "OUT_OF_CONTRACT",
+        "UNKNOWN_TOOL"
+      ],
+      "m1_in_contract_correct": 100.0,
+      "m2_fabrication_rate": 0.0,
+      "m6_latency_p50": 0.994,
+      "m6_latency_p95": 1.796,
+      "m7_nine_step": "6/9"
+    }
+  ]
+}

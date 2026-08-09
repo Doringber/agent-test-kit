@@ -1,640 +1,190 @@
-<p align="center">
-  <img src="docs/assets/readme-banner.png" alt="Agent Test Kit — sci-fi pytest framework for AI agents" width="900">
-</p>
+# agent-test
 
-<pre align="center">
-    _                    _       _____         _  __ _  _
-   / \   __ _  ___ _ __ | |_    |_   _|__  ___| |/ _| || |
-  / _ \ / _` |/ _ \ '_ \| __|_____| |/ _ \ / _ \ | |_| || |
- / ___ \ (_| |  __/ | | | ||_____| |  __/  __/ |  _|__   _|
-/_/   \_\__, |\___|_| |_|\__|    |_|\___|\___|_|_|    |_|
-        |___/
-</pre>
+**Infrastructure for testing stateful AI agents against deterministic, replayable external worlds.**
 
-<p align="center">
-  <strong>Shared pytest framework for testing AI agents.</strong><br>
-  Mock in CI · live HTTP when you opt in · HTML reports humans actually open.
-</p>
-
-<p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#agent-assertions-reference">Assertions</a> ·
-  <a href="#the-report-is-the-product">Reports</a> ·
-  <a href="#step-by-step-use-in-your-agent-repo">Full guide</a> ·
-  <a href="docs/AGENT_E2E_FULL_FLOW.md">E2E flow</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/pytest-8.2+-0A9EDC?logo=pytest&logoColor=white" alt="pytest">
-  <img src="https://img.shields.io/badge/version-0.1.2-blue" alt="0.1.2">
-</p>
+> **Status: pre-implementation.** The architecture is approved and the project is entering Milestone 0, an architectural spike. There is no working release. See [Current status](#current-status).
 
 ---
 
-## The report is the product
+## Why this exists
 
-Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generates a single self-contained HTML file — tool-flow strips, MCP chips, prompt review diffs, golden guard outcomes — the same UI whether you ran mock tests or live E2E.
+AI agents increasingly do their work by calling tools against external systems: issue trackers, databases, billing systems, source control. Testing them is hard for reasons that ordinary test infrastructure does not address.
 
-```
-┌─ Agent test report ─────────────────────────────────────────────┐
-│  Agent: billing-agent          Env: integration                 │
-├─────────────────────────────────────────────────────────────────┤
-│  Scenarios 6   Passed 6   Tool calls 14   Tokens 2.1k           │
-├─────────────────────────────────────────────────────────────────┤
-│  MCP tool flow                                                  │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐                   │
-│  │ READ     │ →  │ READ     │ →  │ WRITE    │                   │
-│  │ billing/ │    │ jira/    │    │ jira/    │                   │
-│  │ get_inv… │    │ get_iss… │    │ create…  │                   │
-│  └──────────┘    └──────────┘    └──────────┘                   │
-├─────────────────────────────────────────────────────────────────┤
-│  ▾ Assertions  ▾ Tool calls  ▾ Timeline  ▾ Side effects       │
-└─────────────────────────────────────────────────────────────────┘
-```
+- **The agent decides what to call.** You cannot write a fixture in advance for a call graph nobody declared.
+- **Static mocks break on state.** An agent creates a record, then reads it back. A fixed response cannot answer a read that depends on a write the agent chose to make.
+- **Tests cause real side effects.** Running a write-capable agent against real systems creates real tickets, real records, real charges. Cleaning up is not hygiene; it is a correctness problem.
+- **Runs are not repeatable.** The same input produces a different execution each time, so a failure is hard to distinguish from ordinary variance.
 
-```bash
-pytest tests/ -v \
-  --agent-report-json=reports/results.json \
-  --agent-report-html=reports/results.html
+The practical result is that agents that write to systems of record often ship with little or no automated behavioral testing.
 
-open reports/results.html
-```
-
-Redaction is on by default — tokens, credentials, and sensitive args never hit disk.
+This project records the slice of external behavior an agent actually depends on, then serves that recording back during tests, so the agent can be exercised repeatedly without contacting real systems.
 
 ---
 
-## Split of responsibility
+## How it works
 
-**Your agent repo owns:** test cases, prompts, fixtures, domain verifiers, cleanup hooks.
-
-**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, JSON/HTML reports, verifier orchestration.
-
-The pytest plugin loads automatically when installed — no `pytest_plugins` line needed.
-
----
-
-## Quick start
-
-### Install
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install --upgrade pip
-```
-
-From PyPI (when published):
-
-```bash
-pip install agent-test-kit pytest>=8.2 pytest-asyncio>=0.23
-```
-
-From a local wheel (dev):
-
-```bash
-pip install --index-url https://pypi.org/simple \
-  /path/to/agent_test_kit-0.1.2-py3-none-any.whl \
-  pytest>=8.2 pytest-asyncio>=0.23
-```
-
-```bash
-python -c "import agent_test_kit; print(agent_test_kit.__version__)"
-pytest --version
-```
-
-### pytest.ini
-
-```ini
-[pytest]
-testpaths = tests
-asyncio_mode = auto
-markers =
-    agent_unit: fast mock tests (run in CI)
-    agent_integration: deployed agent, read-only
-    agent_e2e: live HTTP (opt-in)
-    agent_write_action: real writes (opt-in)
-addopts = -m "not agent_e2e and not agent_write_action"
-```
-
-### First test
-
-```python
-import httpx
-import pytest
-from agent_test_kit import AgentClient, AgentTestConfig
-
-
-class _FakeTransport(httpx.AsyncBaseTransport):
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={
-            "success": True,
-            "run_id": "run_demo",
-            "response": {"summary": "ok"},
-            "trace": {
-                "tool_calls": [
-                    {
-                        "server": "billing",
-                        "name": "get_customer_invoices",
-                        "operation_kind": "read",
-                        "status": "success",
-                    },
-                ],
-            },
-        })
-
-
-@pytest.mark.asyncio
-@pytest.mark.agent_unit
-async def test_billing_read_flow(agent_scenario):
-    client = AgentClient(
-        AgentTestConfig(base_url="http://test", agent_id="billing-agent"),
-        transport=_FakeTransport(),
-    )
-    result = await client.execute({"account_id": 12345})
-    agent_scenario.attach_execution_result(result)
-
-    result.assert_success()
-    result.assert_tool_called("get_customer_invoices", server="billing")
-    result.assert_read_only()
-```
-
-Use `agent_client` / `cursor_agent_client` fixtures in integration tests — they auto-attach results on every `execute()`.
+1. **Record.** Run the agent once against real tools. A proxy sitting on the tool protocol observes every request and response and writes them to a **World**.
+2. **Confirm.** A compiler proposes what each tool does (read or write, which entity it affects, which field identifies it). A human confirms or corrects a small number of these.
+3. **Replay.** Run the agent again with tools served from the World. No credentials, no network to those systems, no side effects.
+4. **Observe.** When the agent does something the World cannot faithfully answer, the system reports a **divergence** rather than inventing a response.
 
 ---
 
-## Agent assertions reference
+## Core concepts
 
-Every assertion runs on `AgentExecutionResult` (returned by `execute()` / `execute_prompt()`). Failures are recorded in `result.assertion_outcomes` and appear in the HTML report.
+### World
 
-### Execution
+A versioned artifact representing the subset of external behavior a set of agent tests requires: which tools exist, what they do, what they returned, and what entities existed. Worlds are immutable and are extended by producing a new version, never by silent mutation.
 
-| Assertion | What it checks |
-|-----------|----------------|
-| `assert_success()` | Agent run completed with `success=True` |
+### Recording
 
-```python
-result.assert_success()
-```
+Observing real tool interactions in order to construct a World. Redaction runs before anything is written to disk. A World should be assumed to contain production-shaped data.
 
-### Tool presence
+### Replay
 
-| Assertion | What it checks |
-|-----------|----------------|
-| `assert_tool_called(name, server=None, *, status, arguments, argument_predicate)` | Tool was invoked; optional status filter, argument subset match, or custom predicate |
-| `assert_tool_not_called(name, server=None)` | Tool was never invoked |
+Serving tool interactions from a World instead of contacting real systems. Replay requires no credentials for those systems, which is a deliberate safety property: a run misconfigured as replay fails to authenticate rather than succeeding destructively.
 
-```python
-from agent_test_kit.models.enums import ToolCallStatus
+### Stateful replay
 
-result.assert_tool_called(
-    "get_customer_invoices",
-    server="billing",
-    status=ToolCallStatus.SUCCESS,
-    arguments={"account_id": 12345},
-    argument_predicate=lambda args: args["limit"] <= 100,
-)
-result.assert_tool_not_called("merge_pull_request", server="bitbucket")
-```
+Within a narrow, declared contract, writes apply to an isolated in-memory overlay so that subsequent reads within the same execution can observe them. The overlay is reset between executions, so runs do not contaminate one another.
 
-### Tool order & sequence
+### Divergence
 
-| Assertion | What it checks |
-|-----------|----------------|
-| `assert_tool_order(before, after, *, status, before_status, after_status)` | One tool ran before another (by index in trace) |
-| `assert_tool_sequence(sequence, *, allow_additional_read_tools=False, status)` | Full workflow order; supports flexible steps (see below) |
-| `assert_read_before_write(read_tool, write_tool)` | Shorthand for `assert_tool_order` — read step before write step |
+A classified, visible report that the replayed world cannot faithfully answer the agent: an unknown tool, an unrecorded interaction, a call outside the declared contract.
 
-Tuple form: `(server, tool_name)` e.g. `("jira", "create_issue")`.
+Divergence is a designed feature, not merely an error condition. Telling you when the world can no longer answer is the point. The system does not guess, and a divergence never produces a passing verdict for anything that depended on it.
 
-```python
-result.assert_tool_order(
-    before=("bitbucket", "get_pr_diff"),
-    after=("jira", "create_issue"),
-)
-result.assert_read_before_write(
-    read_tool=("bitbucket", "get_pr_diff"),
-    write_tool=("jira", "create_issue"),
-)
-result.assert_tool_sequence([
-    ("bitbucket", "get_pullrequest_by_id"),
-    ("jira", "create_issue"),
-])
-```
+### Fidelity
 
-**Flexible sequence steps** — import from `agent_test_kit`:
+Each tool is assigned a replay guarantee, enforced by the engine:
 
-| Type | Meaning |
-|------|---------|
-| `("server", "tool")` | Required step (shorthand tuple) |
-| `ToolStep(server, name, *, status, arguments, argument_predicate)` | Required step with filters |
-| `OptionalStep(ToolStep(...))` | Step may be skipped |
-| `AnyOfStep(ToolStep(...), ToolStep(...))` | One of several alternatives |
+- **L1** — exact replay of recorded interactions, matched on canonical arguments.
+- **L2-Core** — a narrow, declared set of entity-state operations (create, update, delete, get by id, list with a simple filter) that makes read-after-write work.
 
-```python
-from agent_test_kit import ToolStep, OptionalStep, AnyOfStep
-
-result.assert_tool_sequence(
-    [
-        ToolStep("billing", "get_invoices", status=ToolCallStatus.SUCCESS),
-        OptionalStep(ToolStep("billing", "enrich")),
-        AnyOfStep(ToolStep("jira", "create_issue"), ToolStep("jira", "update_issue")),
-    ],
-    allow_additional_read_tools=True,  # extra READ calls between steps OK
-)
-```
-
-### Call counts & workflow size
-
-| Assertion | What it checks |
-|-----------|----------------|
-| `assert_tool_call_count(name, *, server, exact, min_calls, max_calls, status, arguments, argument_predicate)` | How many times a tool ran (provide `exact`, or `min_calls` / `max_calls`) |
-| `assert_max_workflow_steps(maximum)` | Total tool calls in trace ≤ maximum |
-| `assert_max_tool_attempts(maximum, *, tool_name, server)` | No single call exceeded attempt number |
-| `assert_max_retries(maximum, *, tool_name, server)` | Retries ≤ maximum (`attempt - 1`) |
-
-```python
-result.assert_tool_call_count("search", server="jira", min_calls=1, max_calls=3)
-result.assert_tool_call_count("create_issue", server="jira", exact=1)
-result.assert_max_workflow_steps(8)
-result.assert_max_retries(1)
-result.assert_max_tool_attempts(2, tool_name="search", server="jira")
-```
-
-### Safety & write discipline
-
-| Assertion | What it checks |
-|-----------|----------------|
-| `assert_read_only()` | No WRITE or UNKNOWN operation_kind in trace |
-| `assert_no_duplicate_tool_writes()` | Same write tool not called twice |
-| `assert_write_tool_called_once(server, tool)` | Exactly one write to that tool |
-| `assert_no_failed_tool_calls(tool_name=None, *, server)` | No ERROR or TIMEOUT status |
-
-```python
-result.assert_read_only()
-result.assert_no_duplicate_tool_writes()
-result.assert_write_tool_called_once(server="jira", tool="create_issue")
-result.assert_no_failed_tool_calls()
-result.assert_no_failed_tool_calls("search", server="jira")
-```
-
-### Repeated execution (idempotency)
-
-Use `run_repeatedly()` when the same input + idempotency key must produce stable behavior across N runs.
-
-```python
-from agent_test_kit import run_repeatedly
-
-aggregate = await run_repeatedly(
-    agent_client,
-    input={"account_id": 12345},
-    runs=3,
-    idempotency_key="stable-key",
-)
-```
-
-| Assertion (on `RepeatedExecutionResult`) | What it checks |
-|------------------------------------------|----------------|
-| `assert_stable_success()` | Every run succeeded |
-| `assert_no_duplicate_writes(*, identity=None)` | No duplicate write across runs (same server/tool/args) |
-| `assert_responses_stable(*, comparator=None)` | All `response` payloads match |
-| `assert_traces_stable(*, comparator=None)` | All traces match |
-
-```python
-aggregate.assert_stable_success()
-aggregate.assert_no_duplicate_writes()
-aggregate.assert_responses_stable()
-aggregate.assert_traces_stable()
-```
-
-### Regression cases (YAML-driven)
-
-Load cases with `load_regression_cases(path)`; evaluate with `case.evaluate(result)`.
-
-| `expected_outcome` field | Maps to |
-|--------------------------|---------|
-| `success` | `assert_success` semantics |
-| `required_tools` | `assert_tool_called` per entry |
-| `forbidden_tools` | `assert_tool_not_called` per entry |
-| `order` / `tool_order` | `assert_tool_sequence` |
-| `counts` / `tool_counts` | `assert_tool_call_count` per entry |
-| `argument_expectations` | `assert_tool_called` with argument checks |
-| `no_failed_calls` | `assert_no_failed_tool_calls` |
-| `read_only` | `assert_read_only` |
-
-```python
-from agent_test_kit import load_regression_cases
-
-cases = load_regression_cases("tests/data/regression_cases.yaml")
-for case in cases:
-    result = await agent_client.execute(case.input)
-    evaluation = case.evaluate(result)
-    evaluation.assert_passed()
-```
-
-Mark regression tests with `@pytest.mark.agent_regression`.
-
-### Typical PR-review workflow (all together)
-
-```python
-result.assert_success()
-result.assert_tool_sequence([
-    ("bitbucket", "get_pullrequest_by_id"),
-    ("bitbucket", "get_pr_diff"),
-    ("jira", "create_issue"),
-], allow_additional_read_tools=False)
-result.assert_read_before_write(
-    read_tool=("bitbucket", "get_pr_diff"),
-    write_tool=("jira", "create_issue"),
-)
-result.assert_write_tool_called_once(server="jira", tool="create_issue")
-result.assert_tool_not_called("merge_pullrequest", server="bitbucket")
-result.assert_max_retries(1)
-result.assert_no_duplicate_tool_writes()
-result.assert_no_failed_tool_calls()
-```
-
-Every assertion above is captured in `result.assertion_outcomes` and rendered in the HTML report under **Assertions**.
+Calls outside a tool's assigned contract produce a divergence. Fidelity is per tool, so one unsupported tool does not disable a World.
 
 ---
 
-## prompt-ai-helper: review pipeline + agent E2E
+## What this is not
 
-| Endpoint | URL |
-|----------|-----|
-| Review API | `{base_url}/prompt/review` |
-| Health | `{base_url}/prompt/health` |
-| Agent | `{base_url}/agent` |
-| Stream (SSE) | `{base_url}/stream` |
+Category clarity, not criticism of any of these.
 
-Set `AGENT_TEST_BASE_URL` or use a built-in profile via `PROMPT_AI_HELPER_ENV=integration`.
+- Not an LLM evaluation platform
+- Not an LLM-as-judge framework
+- Not a prompt scoring system
+- Not a hallucination detector
+- Not a general observability or tracing platform
+- Not a production agent runtime
+- Not a runtime authorization or policy enforcement product
+- **Not a general-purpose simulator** for Jira, Stripe, GitHub, databases, or arbitrary SaaS systems
 
-```bash
-export ENABLE_REAL_AGENT_TEST=1
-export PROMPT_AI_HELPER_ENV=integration
+That last one matters most. We do not simulate services. We replay a declared subset of recorded behavior and state plainly when a request falls outside it.
 
-pytest tests/test_prompt_ai_helper_integration.py -m agent_e2e -v \
-  --agent-report-json=reports/prompt-ai-helper.json \
-  --agent-report-html=reports/prompt-ai-helper.html
-```
+### What is and is not controlled
 
-Golden guard dataset: `tests/data/golden_prompt_guard.yaml` — fixed inputs, adversarial cases, replayed on every change ([Prefactor golden datasets](https://prefactor.tech/learn/golden-datasets-for-agents), [superagent-guard](https://huggingface.co/datasets/superagent-ai/superagent-guard) taxonomy).
+The system controls **the replayed external world**: tool responses, entity identifiers, timestamps, and ordering are deterministic functions of the World and a seed.
 
-Runbook: [`.cursor/skills/prompt-ai-helper-e2e/SKILL.md`](.cursor/skills/prompt-ai-helper-e2e/SKILL.md) · Full guide: [`docs/AGENT_E2E_FULL_FLOW.md`](docs/AGENT_E2E_FULL_FLOW.md)
+The system does **not** control model or provider non-determinism. The agent still makes live decisions when tested, and those decisions vary. That is intentional, because it is what makes the run a test of the agent rather than a test of the replay engine.
 
 ---
 
-## Step-by-step: use in your agent repo
-
-### Step 1 — Install the package
-
-Same as [Quick start](#quick-start).
-
-### Step 2 — Add test dependencies
+## Architecture overview
 
 ```text
-# requirements-dev.txt
-pytest>=8.2
-pytest-asyncio>=0.23
-agent-test-kit==0.1.2
+Agent
+  |
+  v
+MCP client
+  |
+  v
+Agent Test Proxy
+  |
+  +---- RECORD ----> Real MCP server
+  |
+  +---- REPLAY ----> World + State Overlay
 ```
 
-### Step 3 — Configure pytest
+Interception happens at the **tool-protocol boundary**, not through framework-specific integrations. The agent's tool configuration points at the proxy; the agent's source code is unchanged.
 
-See [pytest.ini](#pytestini) above.
+This is what keeps the system independent of any particular agent framework or language, and it is why the recorder and the replayer are the same component in the same position, differing only in what sits on the other side.
 
-Environment variables (`AGENT_TEST_` prefix):
+MCP is the first protocol adapter, not the product. The core domain contains no MCP-specific concepts.
 
-| Variable | Example | Purpose |
-|----------|---------|---------|
-| `AGENT_TEST_BASE_URL` | `http://my-agent-int.example.com` | Agent base URL |
-| `AGENT_TEST_AGENT_ID` | `billing-agent` | Report metadata |
-| `AGENT_TEST_ENVIRONMENT` | `integration` | Report metadata |
-| `AGENT_TEST_TIMEOUT_SECONDS` | `900` | HTTP timeout |
-
-### Step 4 — Pick the right client
-
-| Your agent exposes | Use | Endpoint |
-|--------------------|-----|----------|
-| JSON execute API + structured `trace.tool_calls` | `AgentClient` | Default `/api/v1/execute` |
-| Cursor agent-base `POST /agent` + `stream-json` | `CursorAgentClient` | Always `/agent` |
-
-```python
-from agent_test_kit import AgentClient, AgentTestConfig
-
-client = AgentClient(AgentTestConfig(
-    base_url="http://billing-agent-int.example.com",
-    agent_id="billing-agent",
-    environment="integration",
-))
-result = await client.execute({"account_id": 12345})
-```
-
-```python
-from agent_test_kit import CursorAgentClient, AgentTestConfig
-
-client = CursorAgentClient(AgentTestConfig(
-    base_url="http://qa-helper-int.example.com",
-    agent_id="qa-helper",
-    environment="integration",
-))
-result = await client.execute_prompt("Summarize open invoices for account 12345")
-```
-
-### Step 5 — Write fast unit tests (mock transport)
-
-See [First test](#first-test). More examples: [`examples/consumer_test_example.py`](examples/consumer_test_example.py), [`tests/test_flow_assertions.py`](tests/test_flow_assertions.py).
-
-### Step 6 — Use pytest fixtures
-
-| Fixture | Purpose |
-|---------|---------|
-| `agent_test_config` | `AgentTestConfig` from env / defaults |
-| `agent_client` | `AgentClient` + auto report attachment |
-| `cursor_agent_client` | `CursorAgentClient` + auto report attachment |
-| `agent_scenario` | Attach results + run verifiers |
-| `agent_cleanup` | Async cleanup manager (runs on teardown) |
-
-```python
-@pytest.mark.asyncio
-@pytest.mark.agent_integration
-async def test_flow(agent_client):
-    result = await agent_client.execute({"account_id": 12345})
-    result.assert_success()
-    result.assert_tool_sequence([("billing", "get_customer_invoices")])
-```
-
-### Step 7 — Assert workflows
-
-See [Agent assertions reference](#agent-assertions-reference) for the full catalog. Quick example:
-
-```python
-result.assert_success()
-result.assert_tool_sequence([
-    ("bitbucket", "get_pullrequest_by_id"),
-    ("jira", "create_issue"),
-])
-result.assert_read_before_write(
-    read_tool=("bitbucket", "get_pr_diff"),
-    write_tool=("jira", "create_issue"),
-)
-result.assert_write_tool_called_once(server="jira", tool="create_issue")
-result.assert_max_retries(1)
-result.assert_no_duplicate_tool_writes()
-result.assert_no_failed_tool_calls()
-```
-
-### Step 8 — Verify real side effects
-
-Implement `SideEffectVerifier` in **your** agent repo:
-
-```python
-from agent_test_kit import SideEffectVerifier, VerificationContext, VerificationResult
-
-
-class InvoiceCreatedVerifier:
-    name = "invoice_created"
-
-    async def verify(self, context: VerificationContext) -> VerificationResult:
-        invoice_id = context.metadata["invoice_id"]
-        return VerificationResult(passed=True, message=f"invoice {invoice_id} exists")
-```
-
-```python
-summary = await agent_scenario.verify(
-    [InvoiceCreatedVerifier()],
-    metadata={"invoice_id": 999},
-    timeout_seconds=15,
-)
-assert summary.passed
-```
-
-Implement verifiers in **your** agent repo — see [Step 8 example](#step-8--verify-real-side-effects) above.
-
-### Step 9 — Register cleanup before writes
-
-```python
-async def test_write_with_cleanup(cursor_agent_client, agent_cleanup):
-    agent_cleanup.register(cleanup_jira_issue, issue_key="PNG-123")
-    result = await cursor_agent_client.execute_prompt("...")
-    result.assert_success()
-    # cleanup runs even if assertions fail
-```
-
-### Step 10 — Live E2E (opt-in)
-
-```bash
-export ENABLE_REAL_AGENT_TEST=1
-export AGENT_TEST_BASE_URL=http://my-agent-int.example.com
-export AGENT_TEST_ENVIRONMENT=integration
-
-pytest tests/test_my_agent_real.py -m agent_e2e \
-  --agent-report-json=reports/live.json \
-  --agent-report-html=reports/live.html
-```
-
-Write tests (real side effects):
-
-```bash
-ENABLE_REAL_AGENT_TEST=1 ENABLE_AGENT_WRITE_ACTIONS=1 \
-pytest tests/test_my_agent_real.py -m agent_write_action
-```
-
-### Step 11 — Generate reports
-
-```bash
-pytest tests/ \
-  --agent-report-json=reports/agent-results.json \
-  --agent-report-html=reports/agent-results.html
-```
-
-Tool-flow data appears when you attach execution results — via fixtures, `agent_scenario.attach_execution_result(result)`, or `store_execution_result(...)`.
-
-### Step 12 — Wire into CI
-
-```bash
-pytest tests/ -m "not agent_e2e and not agent_write_action" -q \
-  --agent-report-json=reports/ci-results.json \
-  --agent-report-html=reports/ci-results.html
-```
-
-Store `reports/` as a CI artifact (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in this repo).
-
-Optional: upload HTML to S3 after E2E — see [E2E full flow guide](docs/AGENT_E2E_FULL_FLOW.md#step-9--verify-ci-output).
+Rationale: [ADR-002](docs/architecture/adr/ADR-002-protocol-boundary-interception.md). Component detail: [architecture-map.md](docs/architecture/architecture-map.md).
 
 ---
 
-## Minimal repo layout
+## Current status
 
-```text
-my-agent/
-├── pytest.ini
-├── requirements-dev.txt
-├── .github/workflows/ci.yml
-└── tests/
-    ├── conftest.py
-    ├── test_my_agent.py
-    ├── test_my_agent_real.py
-    ├── support/
-    └── verifiers/
-```
+**Architecture is complete. The project is currently entering Milestone 0, an architectural spike that validates the core replay model before production implementation begins.**
 
-Reference examples in **this repo**: [`examples/consumer_test_example.py`](examples/consumer_test_example.py), [`tests/test_prompt_ai_helper_integration.py`](tests/test_prompt_ai_helper_integration.py).
+Milestone 0 is throwaway code, developed outside the production source tree, that must demonstrate:
 
----
+- protocol-level recording of real tool traffic
+- exact replay of a recorded interaction
+- stateful read-after-write for a write the recording never contained
+- deterministic world behavior across repeated executions and operating systems
+- an explicit, correctly classified divergence instead of a fabricated response
 
-## Pytest markers
+M0 exists to end or redirect the project cheaply if these do not hold. It has a defined GO / NO-GO / REDESIGN gate.
 
-| Marker | Use |
-|--------|-----|
-| `agent_unit` | Mock transport, fast |
-| `agent_contract` | Schema / API contract |
-| `agent_integration` | Deployed agent, read-only |
-| `agent_e2e` | Live HTTP suite |
-| `agent_write_action` | Real writes — gate carefully |
-| `agent_regression` | Regression case files |
-| `agent_security` | Safety / redaction checks |
-| `agent_multi_mcp` | Multi-MCP orchestration |
+Nothing in v0.1 is implemented. There is no package to install, no CLI to run, and no cloud service.
+
+Details: [current-phase.md](docs/development/current-phase.md) and [milestone-0.md](docs/development/milestone-0.md).
 
 ---
 
-## Framework development
+## Repository guidance
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-pytest --cov=agent_test_kit --cov-fail-under=85
-bash scripts/build-package.sh
-bash scripts/verify-package.sh
-```
+### For contributors
+
+1. Read [`CLAUDE.md`](CLAUDE.md) — project identity, invariants, and current scope.
+2. Read [`docs/README.md`](docs/README.md) — the documentation index.
+3. Check [`docs/development/current-phase.md`](docs/development/current-phase.md) — what may be built right now.
+4. For current work, follow [`docs/development/milestone-0.md`](docs/development/milestone-0.md).
+
+Implementation sessions should follow [implementation-workflow.md](docs/development/implementation-workflow.md), which defines how to load context and which changes require an architecture decision rather than a code change.
+
+### About the existing `src/` tree
+
+The existing `src/` implementation represents an earlier agent-testing approach and is **not** the target architecture defined by [ARCH-002](docs/architecture/ARCH-002.md). Milestone 0 is intentionally developed outside the production source tree so the new architecture can be validated before migration begins.
+
+That earlier work is retained deliberately. Several components are sound and are planned for harvest, including the workflow assertion matcher, the side-effect verifier protocol, the async cleanup manager, and the redaction module. Others informed the current design by showing what did not work. Both are catalogued in [important-files.md](docs/development/important-files.md).
 
 ---
 
-## Public API
+## Documentation
 
-```python
-from agent_test_kit import (
-    AgentClient,
-    CursorAgentClient,
-    AgentTestConfig,
-    AgentExecutionResult,
-    AnyOfStep,
-    CleanupManager,
-    HtmlReportWriter,
-    JsonReportWriter,
-    OptionalStep,
-    PromptReviewClient,
-    RepeatedExecutionResult,
-    ToolStep,
-    get_profile,
-    load_regression_cases,
-    run_repeatedly,
-    run_verifiers,
-    SideEffectVerifier,
-    VerificationContext,
-    VerificationResult,
-)
-```
+| Need | Read |
+|---|---|
+| Product vision | [PRD-001](docs/product/PRD-001.md) |
+| Architecture | [ARCH-002](docs/architecture/ARCH-002.md) |
+| Architecture decisions | [ADR index](docs/architecture/adr/README.md) |
+| Architecture invariants | [invariants.md](docs/architecture/invariants.md) |
+| Current implementation phase | [current-phase.md](docs/development/current-phase.md) |
+| Milestone 0 | [milestone-0.md](docs/development/milestone-0.md) |
+| Domain terminology | [glossary.md](docs/domain/glossary.md) |
+| Testing strategy | [testing-strategy.md](docs/testing/testing-strategy.md) |
+| Security model | [threat-model.md](docs/security/threat-model.md) |
 
-See `agent_test_kit.__all__` for the full export list.
+Full index: [docs/README.md](docs/README.md).
+
+---
+
+## Project principles
+
+- **No false green.** No result is reported as passing without positive evidence.
+- **No evidence means UNKNOWN**, never a pass and never a failure.
+- **Never fabricate replay responses.** If the world cannot answer, it says so.
+- **Divergence is first-class**, always classified and always visible.
+- **Replay worlds are isolated per execution**, so runs cannot contaminate each other.
+- **MCP is an adapter, not the product.** The domain layer stays protocol-neutral.
+- **Accepted architecture changes require an ADR**, supported by evidence. Architecture is not changed silently in code.
+
+Each is stated as an enforceable rule, with its reason and a violation example, in [invariants.md](docs/architecture/invariants.md).
+
+---
+
+## License
+
+See `pyproject.toml`. A `LICENSE` file has not yet been added.

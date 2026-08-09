@@ -1,0 +1,53 @@
+{
+  "mild_server_C": {
+    "recorded_entity_keys": [
+      "created_at",
+      "id",
+      "project",
+      "status",
+      "title"
+    ],
+    "overlay_entity_keys": [
+      "created_at",
+      "id",
+      "project",
+      "title"
+    ],
+    "missing": [
+      "status"
+    ],
+    "create_divergence": "SYNTHESIZED_WRITE_RESPONSE",
+    "read_divergence": "STALE_DERIVED_FIELD",
+    "read_provenance": "overlay",
+    "synthesized_marker_propagated_to_read": false
+  },
+  "severe_server_A_forced": {
+    "fidelity": "l2_core",
+    "real_entity_shape": [
+      "entityType",
+      "name",
+      "observations"
+    ],
+    "overlay_entity_shape": [
+      "created_at",
+      "entities",
+      "id"
+    ],
+    "overlay_entity": {
+      "entities": [
+        {
+          "entityType": "svc",
+          "name": "beta",
+          "observations": [
+            "two"
+          ]
+        }
+      ],
+      "id": "NO-M900",
+      "created_at": "2026-01-01T00:00:01Z"
+    },
+    "read_divergence": null,
+    "read_served": true,
+    "read_provenance": "overlay"
+  }
+}

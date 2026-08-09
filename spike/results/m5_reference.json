@@ -1,0 +1,193 @@
+{
+  "platform": {
+    "system": "Windows",
+    "release": "11",
+    "machine": "AMD64",
+    "python": "3.14.4"
+  },
+  "world": "worlds/m0-fixture.yaml",
+  "seed": 42,
+  "sequence_len": 10,
+  "distinct_hashes": 1,
+  "hash": "2d9ee73a7b09c33e",
+  "steps": [
+    {
+      "tool": "list_issues",
+      "args": {
+        "project": "QA"
+      },
+      "served": true,
+      "provenance": "recorded",
+      "response": {
+        "issues": [
+          {
+            "id": "FX-001",
+            "project": "QA",
+            "title": "Existing issue",
+            "status": "open",
+            "created_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "total": 1
+      },
+      "stale_paths": [],
+      "synthesized_entity_ids": [],
+      "divergence": null,
+      "severity": null
+    },
+    {
+      "tool": "create_issue",
+      "args": {
+        "project": "QA",
+        "title": "Fresh unrecorded"
+      },
+      "served": false,
+      "provenance": null,
+      "response": null,
+      "stale_paths": [],
+      "synthesized_entity_ids": [],
+      "divergence": "ENTITY_CONSTRUCTION_FAILED",
+      "severity": "error"
+    },
+    {
+      "tool": "list_issues",
+      "args": {
+        "project": "QA"
+      },
+      "served": true,
+      "provenance": "overlay",
+      "response": {
+        "issues": [
+          {
+            "id": "FX-001",
+            "project": "QA",
+            "title": "Existing issue",
+            "status": "open",
+            "created_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "total": 1
+      },
+      "stale_paths": [
+        "$.total"
+      ],
+      "synthesized_entity_ids": [],
+      "divergence": "STALE_DERIVED_FIELD",
+      "severity": "warn"
+    },
+    {
+      "tool": "update_issue",
+      "args": {
+        "id": "FX-001",
+        "status": "closed"
+      },
+      "served": true,
+      "provenance": "synthesized",
+      "response": {
+        "id": "FX-001",
+        "project": "QA",
+        "title": "Existing issue",
+        "status": "closed",
+        "created_at": "2026-01-01T00:00:01Z"
+      },
+      "stale_paths": [],
+      "synthesized_entity_ids": [
+        "FX-001"
+      ],
+      "divergence": "SYNTHESIZED_WRITE_RESPONSE",
+      "severity": "warn"
+    },
+    {
+      "tool": "get_issue",
+      "args": {
+        "id": "FX-001"
+      },
+      "served": true,
+      "provenance": "overlay",
+      "response": {
+        "id": "FX-001",
+        "project": "QA",
+        "title": "Existing issue",
+        "status": "closed",
+        "created_at": "2026-01-01T00:00:01Z"
+      },
+      "stale_paths": [],
+      "synthesized_entity_ids": [
+        "FX-001"
+      ],
+      "divergence": null,
+      "severity": null
+    },
+    {
+      "tool": "delete_issue",
+      "args": {
+        "id": "FX-001"
+      },
+      "served": true,
+      "provenance": "synthesized",
+      "response": {
+        "deleted": "FX-001"
+      },
+      "stale_paths": [],
+      "synthesized_entity_ids": [],
+      "divergence": "SYNTHESIZED_WRITE_RESPONSE",
+      "severity": "warn"
+    },
+    {
+      "tool": "list_issues",
+      "args": {
+        "project": "QA"
+      },
+      "served": true,
+      "provenance": "overlay",
+      "response": {
+        "issues": [],
+        "total": 1
+      },
+      "stale_paths": [
+        "$.total"
+      ],
+      "synthesized_entity_ids": [],
+      "divergence": "STALE_DERIVED_FIELD",
+      "severity": "warn"
+    },
+    {
+      "tool": "search_issues",
+      "args": {
+        "query": "project=QA AND status=open"
+      },
+      "served": false,
+      "provenance": null,
+      "response": null,
+      "stale_paths": [],
+      "synthesized_entity_ids": [],
+      "divergence": "OUT_OF_CONTRACT",
+      "severity": "error"
+    },
+    {
+      "tool": "list_issues",
+      "args": {
+        "project": "QA",
+        "assignee": "bob"
+      },
+      "served": false,
+      "provenance": null,
+      "response": null,
+      "stale_paths": [],
+      "synthesized_entity_ids": [],
+      "divergence": "OUT_OF_CONTRACT",
+      "severity": "error"
+    },
+    {
+      "tool": "nonexistent_tool",
+      "args": {},
+      "served": false,
+      "provenance": null,
+      "response": null,
+      "stale_paths": [],
+      "synthesized_entity_ids": [],
+      "divergence": "UNKNOWN_TOOL",
+      "severity": "fatal"
+    }
+  ]
+}

@@ -1,0 +1,701 @@
+world_id: m0-memory
+seed_epoch: '2026-01-01T00:00:00Z'
+volatile_paths:
+- $.requestId
+tools_list_hash: sha256:3cde5d1a7f367caf
+tools:
+  memory/add_observations:
+    operation: write
+    state: proposed
+    fidelity: l1
+    entity_type: observation
+    body_request_path: $.
+    mutation: create
+    ecc:
+      entity_template: []
+      required_fields: []
+      field_bindings: {}
+      generated_fields: {}
+      constant_defaults: {}
+      cardinality: one
+    validation:
+      passed:
+      - V3
+      - V4
+      - V6
+      failed:
+      - V1
+      - V2
+      - V5
+      reasons:
+        V1: no observed entity of this type; entity_template is empty
+        V2: id field 'id' does not resolve to a scalar on every observed entity
+        V5: no recorded create interaction to round-trip against
+  memory/create_entities:
+    operation: write
+    state: proposed
+    fidelity: l1
+    entity_type: entitie
+    body_request_path: $.
+    mutation: create
+    ecc:
+      entity_template: []
+      required_fields: []
+      field_bindings: {}
+      generated_fields: {}
+      constant_defaults: {}
+      cardinality: one
+    validation:
+      passed:
+      - V3
+      - V4
+      - V5
+      - V6
+      failed:
+      - V1
+      - V2
+      reasons:
+        V1: no observed entity of this type; entity_template is empty
+        V2: id field 'id' does not resolve to a scalar on every observed entity
+  memory/create_relations:
+    operation: write
+    state: proposed
+    fidelity: l1
+    entity_type: relation
+    body_request_path: $.
+    mutation: create
+    ecc:
+      entity_template: []
+      required_fields: []
+      field_bindings: {}
+      generated_fields: {}
+      constant_defaults: {}
+      cardinality: one
+    validation:
+      passed:
+      - V3
+      - V4
+      - V6
+      failed:
+      - V1
+      - V2
+      - V5
+      reasons:
+        V1: no observed entity of this type; entity_template is empty
+        V2: id field 'id' does not resolve to a scalar on every observed entity
+        V5: no recorded create interaction to round-trip against
+  memory/delete_entities:
+    operation: write
+    state: confirmed
+    fidelity: l1
+    entity_type: entitie
+    id_request_path: $.id
+    body_request_path: $.
+    mutation: delete
+  memory/delete_observations:
+    operation: write
+    state: confirmed
+    fidelity: l1
+    entity_type: observation
+    id_request_path: $.id
+    body_request_path: $.
+    mutation: delete
+  memory/delete_relations:
+    operation: write
+    state: confirmed
+    fidelity: l1
+    entity_type: relation
+    id_request_path: $.id
+    body_request_path: $.
+    mutation: delete
+  memory/open_nodes:
+    operation: unknown
+    state: confirmed
+    fidelity: l1
+    entity_type: node
+    collection_response_path: $.entities
+    ignored_request_paths:
+    - $.names
+  memory/read_graph:
+    operation: read
+    state: confirmed
+    fidelity: l1
+    entity_type: graph
+    collection_response_path: $.entities
+  memory/search_nodes:
+    operation: read
+    state: confirmed
+    fidelity: l1
+id_minting:
+  entitie: EN-M{counter:03d}
+  relation: RE-M{counter:03d}
+  observation: OB-M{counter:03d}
+  graph: GR-M{counter:03d}
+  node: NO-M{counter:03d}
+entities: {}
+interactions:
+- seq: 1
+  server: memory
+  tool: create_entities
+  request:
+    entities:
+    - entityType: svc
+      name: alpha
+      observations:
+      - one
+  response:
+    value:
+    - name: alpha
+      entityType: svc
+      observations:
+      - one
+  status: success
+- seq: 2
+  server: memory
+  tool: read_graph
+  request: {}
+  response:
+    entities:
+    - name: alpha
+      entityType: svc
+      observations:
+      - one
+    relations: []
+  status: success
+- seq: 3
+  server: memory
+  tool: open_nodes
+  request:
+    names:
+    - alpha
+  response:
+    entities:
+    - name: alpha
+      entityType: svc
+      observations:
+      - one
+    relations: []
+  status: success
+- seq: 4
+  server: memory
+  tool: search_nodes
+  request:
+    query: alpha
+  response:
+    entities:
+    - name: alpha
+      entityType: svc
+      observations:
+      - one
+    relations: []
+  status: success
+tools_list:
+  memory:
+  - name: create_entities
+    title: Create Entities
+    description: Create multiple new entities in the knowledge graph
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The name of the entity
+              entityType:
+                type: string
+                description: The type of the entity
+              observations:
+                type: array
+                items:
+                  type: string
+                description: An array of observation contents associated with the
+                  entity
+            required:
+            - name
+            - entityType
+            - observations
+      required:
+      - entities
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The name of the entity
+              entityType:
+                type: string
+                description: The type of the entity
+              observations:
+                type: array
+                items:
+                  type: string
+                description: An array of observation contents associated with the
+                  entity
+            required:
+            - name
+            - entityType
+            - observations
+            additionalProperties: false
+      required:
+      - entities
+      additionalProperties: false
+  - name: create_relations
+    title: Create Relations
+    description: Create multiple new relations between entities in the knowledge graph.
+      Relations should be in active voice
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        relations:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                description: The name of the entity where the relation starts
+              to:
+                type: string
+                description: The name of the entity where the relation ends
+              relationType:
+                type: string
+                description: The type of the relation
+            required:
+            - from
+            - to
+            - relationType
+      required:
+      - relations
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        relations:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                description: The name of the entity where the relation starts
+              to:
+                type: string
+                description: The name of the entity where the relation ends
+              relationType:
+                type: string
+                description: The type of the relation
+            required:
+            - from
+            - to
+            - relationType
+            additionalProperties: false
+      required:
+      - relations
+      additionalProperties: false
+  - name: add_observations
+    title: Add Observations
+    description: Add new observations to existing entities in the knowledge graph
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        observations:
+          type: array
+          items:
+            type: object
+            properties:
+              entityName:
+                type: string
+                description: The name of the entity to add the observations to
+              contents:
+                type: array
+                items:
+                  type: string
+                description: An array of observation contents to add
+            required:
+            - entityName
+            - contents
+      required:
+      - observations
+    annotations:
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              entityName:
+                type: string
+              addedObservations:
+                type: array
+                items:
+                  type: string
+            required:
+            - entityName
+            - addedObservations
+            additionalProperties: false
+      required:
+      - results
+      additionalProperties: false
+  - name: delete_entities
+    title: Delete Entities
+    description: Delete multiple entities and their associated relations from the
+      knowledge graph
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        entityNames:
+          type: array
+          items:
+            type: string
+          description: An array of entity names to delete
+      required:
+      - entityNames
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+      idempotentHint: true
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+      - success
+      - message
+      additionalProperties: false
+  - name: delete_observations
+    title: Delete Observations
+    description: Delete specific observations from entities in the knowledge graph
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        deletions:
+          type: array
+          items:
+            type: object
+            properties:
+              entityName:
+                type: string
+                description: The name of the entity containing the observations
+              observations:
+                type: array
+                items:
+                  type: string
+                description: An array of observations to delete
+            required:
+            - entityName
+            - observations
+      required:
+      - deletions
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+      idempotentHint: true
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+      - success
+      - message
+      additionalProperties: false
+  - name: delete_relations
+    title: Delete Relations
+    description: Delete multiple relations from the knowledge graph
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        relations:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                description: The name of the entity where the relation starts
+              to:
+                type: string
+                description: The name of the entity where the relation ends
+              relationType:
+                type: string
+                description: The type of the relation
+            required:
+            - from
+            - to
+            - relationType
+          description: An array of relations to delete
+      required:
+      - relations
+    annotations:
+      readOnlyHint: false
+      destructiveHint: true
+      idempotentHint: true
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+      - success
+      - message
+      additionalProperties: false
+  - name: read_graph
+    title: Read Graph
+    description: Read the entire knowledge graph
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties: {}
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The name of the entity
+              entityType:
+                type: string
+                description: The type of the entity
+              observations:
+                type: array
+                items:
+                  type: string
+                description: An array of observation contents associated with the
+                  entity
+            required:
+            - name
+            - entityType
+            - observations
+            additionalProperties: false
+        relations:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                description: The name of the entity where the relation starts
+              to:
+                type: string
+                description: The name of the entity where the relation ends
+              relationType:
+                type: string
+                description: The type of the relation
+            required:
+            - from
+            - to
+            - relationType
+            additionalProperties: false
+      required:
+      - entities
+      - relations
+      additionalProperties: false
+  - name: search_nodes
+    title: Search Nodes
+    description: Search for nodes in the knowledge graph based on a query
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        query:
+          type: string
+          description: The search query to match against entity names, types, and
+            observation content
+      required:
+      - query
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The name of the entity
+              entityType:
+                type: string
+                description: The type of the entity
+              observations:
+                type: array
+                items:
+                  type: string
+                description: An array of observation contents associated with the
+                  entity
+            required:
+            - name
+            - entityType
+            - observations
+            additionalProperties: false
+        relations:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                description: The name of the entity where the relation starts
+              to:
+                type: string
+                description: The name of the entity where the relation ends
+              relationType:
+                type: string
+                description: The type of the relation
+            required:
+            - from
+            - to
+            - relationType
+            additionalProperties: false
+      required:
+      - entities
+      - relations
+      additionalProperties: false
+  - name: open_nodes
+    title: Open Nodes
+    description: Open specific nodes in the knowledge graph by their names
+    inputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        names:
+          type: array
+          items:
+            type: string
+          description: An array of entity names to retrieve
+      required:
+      - names
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    execution:
+      taskSupport: forbidden
+    outputSchema:
+      $schema: http://json-schema.org/draft-07/schema#
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: The name of the entity
+              entityType:
+                type: string
+                description: The type of the entity
+              observations:
+                type: array
+                items:
+                  type: string
+                description: An array of observation contents associated with the
+                  entity
+            required:
+            - name
+            - entityType
+            - observations
+            additionalProperties: false
+        relations:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+                description: The name of the entity where the relation starts
+              to:
+                type: string
+                description: The name of the entity where the relation ends
+              relationType:
+                type: string
+                description: The type of the relation
+            required:
+            - from
+            - to
+            - relationType
+            additionalProperties: false
+      required:
+      - entities
+      - relations
+      additionalProperties: false

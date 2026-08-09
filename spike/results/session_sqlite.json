@@ -1,0 +1,160 @@
+{
+  "tools_list": {
+    "sqlite": [
+      {
+        "name": "read_query",
+        "description": "Execute a SELECT query on the SQLite database",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "SELECT SQL query to execute"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "write_query",
+        "description": "Execute an INSERT, UPDATE, or DELETE query on the SQLite database",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "INSERT, UPDATE, or DELETE SQL query to execute"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "create_table",
+        "description": "Create a new table in the SQLite database",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "CREATE TABLE SQL statement"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "list_tables",
+        "description": "List all tables in the SQLite database",
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "describe_table",
+        "description": "Get the schema information for a specific table",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "table_name": {
+              "type": "string",
+              "description": "Name of the table to describe"
+            }
+          },
+          "required": [
+            "table_name"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ]
+  },
+  "interactions": [
+    {
+      "seq": 1,
+      "server": "sqlite",
+      "tool": "create_table",
+      "request": {
+        "query": "CREATE TABLE issues (id TEXT PRIMARY KEY, project TEXT, title TEXT)"
+      },
+      "response": {
+        "value": []
+      },
+      "status": "success"
+    },
+    {
+      "seq": 2,
+      "server": "sqlite",
+      "tool": "write_query",
+      "request": {
+        "query": "INSERT INTO issues VALUES ('SQ-001','QA','Existing')"
+      },
+      "response": {
+        "value": []
+      },
+      "status": "success"
+    },
+    {
+      "seq": 3,
+      "server": "sqlite",
+      "tool": "list_tables",
+      "request": {},
+      "response": {
+        "value": [
+          {
+            "name": "issues"
+          }
+        ]
+      },
+      "status": "success"
+    },
+    {
+      "seq": 4,
+      "server": "sqlite",
+      "tool": "read_query",
+      "request": {
+        "query": "SELECT * FROM issues"
+      },
+      "response": {
+        "value": [
+          {
+            "id": "SQ-001",
+            "project": "QA",
+            "title": "Existing"
+          }
+        ]
+      },
+      "status": "success"
+    }
+  ]
+}
