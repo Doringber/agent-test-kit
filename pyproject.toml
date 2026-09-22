@@ -27,6 +27,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+jev = [
+    "pytest-jev>=0.1.0",
+]
 dev = [
     "build>=1.2",
     "mypy>=1.8",
