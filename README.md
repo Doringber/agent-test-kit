@@ -636,6 +636,25 @@ pytest tests/ \
 
 Tool-flow data appears when you attach execution results — via fixtures, `agent_scenario.attach_execution_result(result)`, or `store_execution_result(...)`.
 
+**Release readiness.** Every report opens with a **GO / NO-GO** block: evidence for a human release decision, not a replacement for it. Failed or errored scenarios, security failures, and duplicate writes block. Everything else is a note unless you set a threshold.
+
+| Option | Effect |
+|--------|--------|
+| `--agent-baseline=reports/main.json` | Compare with a previous JSON report: regressions block; pass-rate drops, scenarios not run, token growth above 20%, and fingerprint changes (`model`, `prompt_version`, `agent_version`, `knowledge_version`) are notes. A missing baseline is a note. |
+| `--agent-min-persona-pass-rate=0.8` | Block when any persona's pass rate is below the value |
+| `--agent-enforce-readiness` | Fail the pytest session on NO-GO (default: report only) |
+
+Attach goal-based evaluations so the report can segment by persona:
+
+```python
+async def test_refund_case(agent_client, agent_scenario):
+    evaluation = await case.run(agent_client)
+    agent_scenario.attach_regression_evaluation(evaluation)
+    evaluation.assert_passed()
+```
+
+Set `AGENT_TEST_KNOWLEDGE_VERSION` (RAG index or knowledge-base version) next to model and prompt version so answer drift can be traced to its source. To evaluate outside pytest: `evaluate_readiness(load_report(path), baseline=load_report(base), policy=ReadinessPolicy(max_pass_rate_drop=0.1))`.
+
 ### Step 12 — Wire into CI
 
 ```bash
@@ -711,6 +730,7 @@ from agent_test_kit import (
     JsonReportWriter,
     OptionalStep,
     PromptReviewClient,
+    ReadinessPolicy,
     RegressionRunEvaluation,
     RepeatedExecutionResult,
     RequiredFieldsScorer,
@@ -718,8 +738,10 @@ from agent_test_kit import (
     Score,
     Scorer,
     ToolStep,
+    evaluate_readiness,
     get_profile,
     load_regression_cases,
+    load_report,
     response_text,
     run_repeatedly,
     run_verifiers,
