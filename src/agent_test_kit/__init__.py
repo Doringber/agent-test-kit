@@ -23,10 +23,12 @@ from agent_test_kit.publishing import (
     ResultPublishError,
 )
 from agent_test_kit.regression import (
+    RegressionBehavior,
     RegressionCase,
     RegressionCaseLoadError,
     RegressionEvaluation,
     RegressionExpectedOutcome,
+    RegressionRunEvaluation,
     RegressionToolExpectation,
     load_regression_cases,
 )
@@ -74,10 +76,12 @@ __all__ = [
     "PromptReviewClient",
     "PromptAiHelperProfile",
     "PublishResult",
+    "RegressionBehavior",
     "RegressionCase",
     "RegressionCaseLoadError",
     "RegressionEvaluation",
     "RegressionExpectedOutcome",
+    "RegressionRunEvaluation",
     "RegressionToolExpectation",
     "RepeatedExecutionResult",
     "RequiredFieldsScorer",

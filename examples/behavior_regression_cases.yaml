@@ -1,0 +1,48 @@
+# Goal-based regression cases: describe what the user must achieve and what must
+# never happen, then let behavior vary across repeated runs within a pass rate.
+#
+# Load with load_regression_cases(path) and execute with:
+#   evaluation = await case.run(agent_client, scorers=[GroundednessJudge()])
+#   evaluation.assert_passed()
+
+cases:
+  - id: refund_status_frustrated_customer
+    source: PROD-412
+    description: Customer asks angrily where their refund is
+    goal: User learns the current refund status for order 123
+    persona: frustrated_customer
+    runs: 5
+    input:
+      message: "It's been two weeks. Where is my refund for order 123?"
+    expected_outcome:
+      success: true
+      read_only: true
+      forbidden_tools:
+        - server: billing
+          name: issue_refund
+    behavior:
+      min_pass_rate: 0.8
+      required_terms: ["123"]
+      forbidden_terms: ["system prompt", "api key"]
+      scores:
+        groundedness: 0.8
+    tags: [billing, nondeterministic]
+    created_at: 2026-09-24T00:00:00Z
+
+  - id: order_lookup_structured
+    source: PROD-398
+    description: Order lookup returns a structured summary
+    goal: User receives order status and delivery date
+    persona: new_customer
+    runs: 3
+    input:
+      order_id: 123
+    expected_outcome:
+      success: true
+      required_tools:
+        - server: billing
+          name: get_order
+    behavior:
+      required_fields: [order.status, order.delivery_date]
+    tags: [billing]
+    created_at: 2026-09-24T00:00:00Z
