@@ -6,7 +6,7 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import pytest_asyncio
@@ -17,9 +17,10 @@ from agent_test_kit.client.config import AgentTestConfig
 from agent_test_kit.client.cursor_agent_client import CursorAgentClient
 from agent_test_kit.client.prompt_ai_helper_profiles import get_profile
 from agent_test_kit.models.execution import AgentExecutionResult
-from agent_test_kit.models.report import ScenarioStatus
+from agent_test_kit.models.report import AgentTestRunReport, ReleaseReadiness, ScenarioStatus
 from agent_test_kit.reporting.html_report import HtmlReportWriter
 from agent_test_kit.reporting.json_report import JsonReportWriter
+from agent_test_kit.reporting.readiness import ReadinessPolicy, evaluate_readiness, load_report
 from agent_test_kit.verifiers import (
     SideEffectVerifier,
     VerificationContext,
@@ -28,6 +29,9 @@ from agent_test_kit.verifiers import (
     run_verifiers,
 )
 
+if TYPE_CHECKING:
+    from agent_test_kit.regression import RegressionRunEvaluation
+
 
 @dataclass
 class PluginState:
@@ -35,9 +39,13 @@ class PluginState:
     json_writer: JsonReportWriter | None
     results: dict[str, AgentExecutionResult] = field(default_factory=dict)
     verification_results: dict[str, list[VerificationResult]] = field(default_factory=dict)
+    regression_evaluations: dict[str, RegressionRunEvaluation] = field(default_factory=dict)
     phase_reports: dict[str, dict[str, pytest.TestReport]] = field(default_factory=dict)
     html_path: Path | None = None
     write_json: bool = True
+    baseline_path: Path | None = None
+    readiness_policy: ReadinessPolicy = field(default_factory=ReadinessPolicy)
+    enforce_readiness: bool = False
 
 
 _STASH_KEY = pytest.StashKey[PluginState]()
@@ -72,11 +80,17 @@ def pytest_configure(config: pytest.Config) -> None:
         profile = get_profile(profile_env)
         writer.endpoint_profile = dict(profile.endpoint_rows())
         writer.expected_mcp_servers = list(profile.mcp_servers)
+    baseline_path = config.getoption("--agent-baseline", default=None)
     config.stash[_STASH_KEY] = PluginState(
         agent_config=agent_config,
         json_writer=writer,
         html_path=Path(html_path) if html_path else None,
         write_json=bool(json_path),
+        baseline_path=Path(baseline_path) if baseline_path else None,
+        readiness_policy=ReadinessPolicy(
+            min_persona_pass_rate=config.getoption("--agent-min-persona-pass-rate", default=None)
+        ),
+        enforce_readiness=bool(config.getoption("--agent-enforce-readiness", default=False)),
     )
 
 
@@ -100,6 +114,12 @@ class ScenarioResultRecorder:
         results: VerificationSummary | Sequence[VerificationResult],
     ) -> None:
         attach_verification_results(self.config, self.nodeid, results)
+
+    def attach_regression_evaluation(self, evaluation: RegressionRunEvaluation) -> None:
+        """Record goal, persona, and pass rate for readiness segmentation."""
+        state = self.config.stash.get(_STASH_KEY, None)
+        if state is not None:
+            state.regression_evaluations[self.nodeid] = evaluation
 
     async def verify(
         self,
@@ -224,6 +244,7 @@ def _record_scenario_from_reports(
         extra=extra,
         execution_result=stored_result,
         verification_results=state.verification_results.get(item.nodeid, []),
+        regression_evaluation=state.regression_evaluations.get(item.nodeid),
     )
 
 
@@ -248,10 +269,39 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if state is None or state.json_writer is None:
         return
     report = state.json_writer.build_report()
+    report.readiness = _evaluate_session_readiness(state, report)
     if state.write_json:
         state.json_writer.write(report)
     if state.html_path is not None:
         HtmlReportWriter(state.html_path).write(report)
+    if (
+        state.enforce_readiness
+        and report.readiness.verdict == "no_go"
+        and exitstatus == pytest.ExitCode.OK
+    ):
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def _evaluate_session_readiness(
+    state: PluginState,
+    report: AgentTestRunReport,
+) -> ReleaseReadiness:
+    baseline: AgentTestRunReport | None = None
+    notes: list[str] = []
+    if state.baseline_path is not None:
+        try:
+            baseline = load_report(state.baseline_path)
+        except FileNotFoundError:
+            notes.append(f"Baseline report not found: {state.baseline_path}")
+        except (OSError, ValueError) as exc:
+            path, reason = state.baseline_path, type(exc).__name__
+            notes.append(f"Baseline report unreadable: {path} ({reason})")
+    return evaluate_readiness(
+        report,
+        baseline=baseline,
+        policy=state.readiness_policy,
+        notes=notes,
+    )
 
 
 def store_execution_result(

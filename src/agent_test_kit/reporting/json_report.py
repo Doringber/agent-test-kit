@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_test_kit.client.config import AgentTestConfig
 from agent_test_kit.models.execution import AgentExecutionResult
@@ -21,6 +21,9 @@ from agent_test_kit.models.report import (
 )
 from agent_test_kit.reporting.redaction import redact_value
 from agent_test_kit.verifiers.protocols import VerificationResult
+
+if TYPE_CHECKING:
+    from agent_test_kit.regression import RegressionRunEvaluation
 
 
 def _evidence_links(value: Any) -> list[str]:
@@ -64,8 +67,10 @@ class JsonReportWriter:
         extra: dict[str, Any] | None = None,
         execution_result: AgentExecutionResult | None = None,
         verification_results: Sequence[VerificationResult] = (),
+        regression_evaluation: RegressionRunEvaluation | None = None,
     ) -> None:
         extra = extra or {}
+        evaluation = regression_evaluation
         if execution_result is None:
             candidate = extra.get("execution_result")
             if isinstance(candidate, AgentExecutionResult):
@@ -189,6 +194,12 @@ class JsonReportWriter:
                 golden_met=extra.get("golden_met")
                 if extra.get("golden_met") is not None
                 else response_dict.get("golden_met"),
+                case_id=evaluation.case_id if evaluation is not None else None,
+                goal=evaluation.goal if evaluation is not None else None,
+                persona=evaluation.persona if evaluation is not None else None,
+                pass_rate=evaluation.pass_rate if evaluation is not None else None,
+                min_pass_rate=evaluation.min_pass_rate if evaluation is not None else None,
+                run_count=len(evaluation.runs) if evaluation is not None else None,
             )
         )
 
@@ -203,6 +214,7 @@ class JsonReportWriter:
             agent_version=self.config.agent_version,
             model=self.config.model,
             prompt_version=self.config.prompt_version,
+            knowledge_version=self.config.knowledge_version,
             environment=self.config.environment,
             started_at=self.started_at,
             completed_at=datetime.now(UTC),

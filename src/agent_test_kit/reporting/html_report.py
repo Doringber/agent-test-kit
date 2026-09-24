@@ -164,6 +164,76 @@ def _golden_outcome_block(scenario: dict[str, Any]) -> str:
 </div>"""
 
 
+def _bullet_list(items: list[Any]) -> str:
+    return "<ul>" + "".join(f"<li>{_text(item)}</li>" for item in items) + "</ul>"
+
+
+def _readiness_block(readiness: dict[str, Any] | None) -> str:
+    if not readiness:
+        return ""
+    go = readiness.get("verdict") == "go"
+    css = "readiness-go" if go else "readiness-no-go"
+    label = "GO" if go else "NO-GO"
+    parts = [
+        f'<section class="card readiness {css}">'
+        f'<h2>Release readiness <span class="verdict">{label}</span></h2>'
+        '<p class="readiness-hint">Evidence for a human release decision.</p>'
+    ]
+    blocking = readiness.get("blocking") or []
+    if blocking:
+        parts.append(f"<h4>Blocking</h4>{_bullet_list(blocking)}")
+    notes = readiness.get("notes") or []
+    if notes:
+        parts.append(f"<h4>Notes</h4>{_bullet_list(notes)}")
+    segments = readiness.get("persona_segments") or []
+    if segments:
+        rows = [
+            [
+                segment["persona"],
+                segment["scenarios"],
+                segment["passed"],
+                f"{segment['pass_rate']:.0%}",
+            ]
+            for segment in segments
+        ]
+        parts.append(
+            "<h4>Personas</h4>" + _table(["Persona", "Scenarios", "Passed", "Pass rate"], rows)
+        )
+    baseline = readiness.get("baseline")
+    if baseline:
+        rows = [
+            [change, values]
+            for change, values in (
+                ("Regressions", baseline.get("regressions")),
+                ("Pass-rate drops", baseline.get("pass_rate_drops")),
+                ("Not run", baseline.get("missing_scenarios")),
+                ("Fingerprint changes", baseline.get("fingerprint_changes")),
+            )
+            if values
+        ]
+        body = _table(["Change", "Details"], rows) if rows else "<p>No changes.</p>"
+        parts.append(f"<h4>Baseline {_text(baseline.get('baseline_run_id'))}</h4>{body}")
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def _behavior_rows(scenario: dict[str, Any]) -> list[list[Any]]:
+    rows: list[list[Any]] = []
+    if scenario.get("case_id"):
+        rows.append(["Case", scenario["case_id"]])
+    if scenario.get("goal"):
+        rows.append(["Goal", scenario["goal"]])
+    if scenario.get("persona"):
+        rows.append(["Persona", scenario["persona"]])
+    if scenario.get("pass_rate") is not None:
+        required = scenario.get("min_pass_rate")
+        suffix = f" (required {required:.0%})" if required is not None else ""
+        rows.append(["Pass rate", f"{scenario['pass_rate']:.0%}{suffix}"])
+    if scenario.get("run_count") is not None:
+        rows.append(["Runs", scenario["run_count"]])
+    return rows
+
+
 class HtmlReportWriter:
     """Render an escaped and redacted report as one portable HTML file."""
 
@@ -180,6 +250,7 @@ class HtmlReportWriter:
             ["Agent version", payload.get("agent_version")],
             ["Model", payload.get("model")],
             ["Prompt version", payload.get("prompt_version")],
+            ["Knowledge version", payload.get("knowledge_version")],
             ["Environment", payload["environment"]],
             ["Repository", payload.get("repository")],
             ["Branch / commit", f"{payload.get('branch') or ''} {payload.get('commit') or ''}"],
@@ -265,6 +336,12 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
 .classification-chip{{font-size:.7rem;font-weight:700;padding:.15rem .45rem;border-radius:4px;background:#eef4ff;color:var(--accent)}}
 .violation-chips{{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.4rem}}
 .violation-chip{{font:10px ui-monospace;padding:.15rem .4rem;border-radius:4px;background:#f2f4f7;color:var(--muted)}}
+.readiness{{border-left:6px solid var(--line)}}
+.readiness-go{{border-left-color:var(--pass)}}.readiness-no-go{{border-left-color:var(--fail)}}
+.verdict{{font-size:.85rem;font-weight:800;padding:.2rem .6rem;border-radius:6px;color:#fff}}
+.verdict{{margin-left:.5rem;vertical-align:middle}}
+.readiness-go .verdict{{background:var(--pass)}}.readiness-no-go .verdict{{background:var(--fail)}}
+.readiness-hint{{color:var(--muted);margin:.2rem 0 .5rem}}
 </style>
 </head>
 <body><main>
@@ -273,6 +350,7 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
 <div class="hero-meta">Framework {escape(str(payload.get("framework_version") or ""))} · Run {escape(str(payload["run_id"]))}</div>
 <div class="badges"><span class="badge">Agent: {agent_badge}</span><span class="badge">Env: {env_badge}</span></div>
 </header>
+{_readiness_block(payload.get("readiness"))}
 {_metric_cards(metrics)}
 {endpoint_html}
 {mcp_overview}
@@ -329,6 +407,7 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
             for event in scenario["timeline"]
         ]
         summary = [
+            *_behavior_rows(scenario),
             ["Node", scenario["nodeid"]],
             ["Duration (ms)", scenario["duration_ms"]],
             ["Run", scenario.get("run_id")],

@@ -16,8 +16,9 @@ from agent_test_kit.reporting.json_report import JsonReportWriter
 
 @pytest.mark.agent_unit
 def test_pytest_configure_creates_json_writer(tmp_path: Path) -> None:
+    options = {"--agent-report-json": str(tmp_path / "report.json")}
     config = MagicMock()
-    config.getoption.return_value = str(tmp_path / "report.json")
+    config.getoption.side_effect = lambda name, default=None: options.get(name, default)
     config.stash = pytest.Stash()
 
     pytest_plugin.pytest_configure(config)
@@ -25,6 +26,8 @@ def test_pytest_configure_creates_json_writer(tmp_path: Path) -> None:
     state = config.stash[pytest_plugin._STASH_KEY]
     assert isinstance(state.agent_config, AgentTestConfig)
     assert state.json_writer is not None
+    assert state.baseline_path is None
+    assert state.enforce_readiness is False
 
 
 @pytest.mark.agent_unit

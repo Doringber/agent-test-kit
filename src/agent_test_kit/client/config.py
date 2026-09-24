@@ -31,6 +31,10 @@ class AgentTestConfig(BaseSettings):
     environment: str = Field(default="local")
     model: str | None = None
     prompt_version: str | None = None
+    knowledge_version: str | None = Field(
+        default=None,
+        description="Version of the RAG index or knowledge base the agent answered from",
+    )
     repository: str | None = None
     branch: str | None = None
     commit: str | None = None

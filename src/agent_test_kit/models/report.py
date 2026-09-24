@@ -70,6 +70,12 @@ class ScenarioReport(BaseModel):
     golden_outcome: str | None = None
     expected_classification: str | None = None
     golden_met: bool | None = None
+    case_id: str | None = None
+    goal: str | None = None
+    persona: str | None = None
+    pass_rate: float | None = None
+    min_pass_rate: float | None = None
+    run_count: int | None = None
 
     @model_validator(mode="after")
     def derive_status(self) -> ScenarioReport:
@@ -97,6 +103,38 @@ class RunMetrics(BaseModel):
     security_failure_count: int = 0
 
 
+class PersonaSegment(BaseModel):
+    """Pass rate of executed scenarios that share one persona."""
+
+    persona: str
+    scenarios: int
+    passed: int
+    pass_rate: float
+
+
+class BaselineComparison(BaseModel):
+    """Differences between this run and a previous report."""
+
+    baseline_run_id: str
+    regressions: list[str] = Field(default_factory=list)
+    pass_rate_drops: list[str] = Field(default_factory=list)
+    missing_scenarios: list[str] = Field(default_factory=list)
+    fingerprint_changes: list[str] = Field(default_factory=list)
+
+
+class ReleaseReadiness(BaseModel):
+    """Go / No-Go summary derived from the run's evidence.
+
+    ``blocking`` reasons produce ``no_go``; ``notes`` inform the reviewer without blocking.
+    """
+
+    verdict: Literal["go", "no_go"]
+    blocking: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    persona_segments: list[PersonaSegment] = Field(default_factory=list)
+    baseline: BaselineComparison | None = None
+
+
 class AgentTestRunReport(BaseModel):
     """Versioned report emitted after a pytest session."""
 
@@ -111,6 +149,7 @@ class AgentTestRunReport(BaseModel):
     agent_version: str | None = None
     model: str | None = None
     prompt_version: str | None = None
+    knowledge_version: str | None = None
     environment: str
     started_at: datetime
     completed_at: datetime
@@ -118,6 +157,7 @@ class AgentTestRunReport(BaseModel):
     metrics: RunMetrics = Field(default_factory=RunMetrics)
     endpoint_profile: dict[str, str] | None = None
     expected_mcp_servers: list[str] = Field(default_factory=list)
+    readiness: ReleaseReadiness | None = None
 
     def finalize_metrics(self) -> None:
         self.metrics.total_scenarios = len(self.scenarios)

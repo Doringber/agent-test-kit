@@ -40,6 +40,7 @@ from agent_test_kit.repetition import (
 from agent_test_kit.reporting.html_report import HtmlReportWriter
 from agent_test_kit.reporting.json_report import JsonReportWriter
 from agent_test_kit.reporting.markdown_status import MarkdownStatusReportWriter
+from agent_test_kit.reporting.readiness import ReadinessPolicy, evaluate_readiness, load_report
 from agent_test_kit.scoring import (
     ForbiddenTermsScorer,
     RequiredFieldsScorer,
@@ -76,6 +77,7 @@ __all__ = [
     "PromptReviewClient",
     "PromptAiHelperProfile",
     "PublishResult",
+    "ReadinessPolicy",
     "RegressionBehavior",
     "RegressionCase",
     "RegressionCaseLoadError",
@@ -98,7 +100,9 @@ __all__ = [
     "VerificationResult",
     "VerificationSummary",
     "__version__",
+    "evaluate_readiness",
     "load_regression_cases",
+    "load_report",
     "get_profile",
     "response_text",
     "run_repeatedly",
