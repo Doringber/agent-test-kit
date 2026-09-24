@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import agent_test_kit
 from agent_test_kit._version import _read_version_file, _resolve_version
+
+_VERSION_FILE = Path(__file__).resolve().parents[1] / "VERSION"
 
 
 def test_version_is_semver_like() -> None:
@@ -14,8 +18,8 @@ def test_version_is_semver_like() -> None:
 
 
 def test_read_version_file() -> None:
-    assert _read_version_file() == "0.1.1"
+    assert _read_version_file() == _VERSION_FILE.read_text(encoding="utf-8").strip()
 
 
 def test_resolve_version_matches_file() -> None:
-    assert _resolve_version() == "0.1.1"
+    assert _resolve_version() == _read_version_file()
