@@ -48,6 +48,13 @@ def _first_value(source: dict[str, Any], *keys: str) -> Any | None:
     return None
 
 
+def _object_payload(value: Any, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        msg = f"{label} must be an object"
+        raise ValueError(msg)
+    return value
+
+
 def _tool_payload(event: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     tool_call = event.get("tool_call")
     if tool_call is not None and not isinstance(tool_call, dict):
@@ -56,11 +63,12 @@ def _tool_payload(event: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]
     normalized_tool_call = tool_call or {}
     mcp: dict[str, Any] = {}
     if "mcpToolCall" in normalized_tool_call:
-        raw = normalized_tool_call.get("mcpToolCall")
-        mcp = raw if isinstance(raw, dict) else {}
+        mcp = _object_payload(normalized_tool_call.get("mcpToolCall"), "mcpToolCall")
     elif "getMcpToolsToolCall" in normalized_tool_call:
-        raw = normalized_tool_call.get("getMcpToolsToolCall")
-        mcp = raw if isinstance(raw, dict) else {}
+        mcp = _object_payload(
+            normalized_tool_call.get("getMcpToolsToolCall"),
+            "getMcpToolsToolCall",
+        )
     else:
         for key, value in normalized_tool_call.items():
             if key.endswith("ToolCall") and isinstance(value, dict):
