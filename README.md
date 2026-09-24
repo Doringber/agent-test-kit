@@ -381,6 +381,45 @@ for case in cases:
 
 Mark regression tests with `@pytest.mark.agent_regression`.
 
+**Goal-based cases.** Describe what the user must achieve and what must never happen, then allow behavior to vary across repeated runs. All fields are optional; existing cases are unchanged.
+
+| Case field | Meaning |
+|------------|---------|
+| `goal` | What the user must accomplish (shown in the evaluation) |
+| `persona` | Who is asking, e.g. `frustrated_customer` |
+| `runs` | How many times `case.run()` executes the input (default `1`) |
+| `behavior.min_pass_rate` | Fraction of runs that must pass (default `1.0`) |
+| `behavior.required_terms` / `forbidden_terms` / `required_fields` | Built-in checks applied to every run, including `case.evaluate()` |
+| `behavior.scores` | `scorer_name: min_score` for scorers you pass to `case.run()` |
+
+```yaml
+- id: refund_status_frustrated_customer
+  source: PROD-412
+  description: Customer asks angrily where their refund is
+  goal: User learns the current refund status for order 123
+  persona: frustrated_customer
+  runs: 5
+  input: {message: "Where is my refund for order 123?"}
+  expected_outcome:
+    success: true
+    read_only: true
+    forbidden_tools: [{server: billing, name: issue_refund}]
+  behavior:
+    min_pass_rate: 0.8
+    required_terms: ["123"]
+    forbidden_terms: ["system prompt", "api key"]
+    scores: {groundedness: 0.8}
+  created_at: 2026-09-24T00:00:00Z
+```
+
+```python
+for case in load_regression_cases("tests/data/behavior_cases.yaml"):
+    evaluation = await case.run(agent_client, scorers=[GroundednessJudge()])
+    evaluation.assert_passed()  # fails with pass rate and per-run failures
+```
+
+`case.run()` executes `runs` times with one idempotency key (`regression:<id>` by default) and checks that every scorer named in `behavior.scores` was provided before calling the agent. To score results you already have, use `await case.evaluate_runs(results, scorers=...)`. Full example: [`examples/behavior_regression_cases.yaml`](examples/behavior_regression_cases.yaml).
+
 ### Typical PR-review workflow (all together)
 
 ```python
@@ -672,6 +711,7 @@ from agent_test_kit import (
     JsonReportWriter,
     OptionalStep,
     PromptReviewClient,
+    RegressionRunEvaluation,
     RepeatedExecutionResult,
     RequiredFieldsScorer,
     RequiredTermsScorer,
