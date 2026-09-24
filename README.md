@@ -279,6 +279,45 @@ result.assert_no_failed_tool_calls()
 result.assert_no_failed_tool_calls("search", server="jira")
 ```
 
+### Semantic meaning (Jev)
+
+String checks break when the model rewords a reply. `assert_means` sends the response text to [pytest-jev](https://github.com/allebee/pytest-jev), which asks TypeSafe's Jev whether each claim holds. One request covers every claim. The probabilities are stored on `assertion_outcomes` and show up in the HTML report.
+
+```bash
+pip install "agent-test-kit[jev]"
+export OPENROUTER_API_KEY=...    # or TYPESAFE_API_KEY from https://console.typesafe.ai
+```
+
+Request the `jev` fixture pytest-jev provides. Tests that use it are marked `jev`, so `pytest -m "not jev"` stays offline. Without an API key those tests are skipped. In CI, pass `--jev-require` so a missing key fails the job.
+
+```python
+@pytest.mark.asyncio
+async def test_refund_reply(agent_scenario, jev):
+    result = await agent_client.execute({"ticket": "I was charged twice"})
+    agent_scenario.attach_execution_result(result)
+    result.assert_success()
+    result.assert_means(
+        jev,
+        holds=[
+            "apologizes to the customer",
+            "says the duplicate payment was refunded",
+        ],
+        lacks=["asks for a password or a full card number"],
+        # context={"policy": REFUND_POLICY},  # claims can name `policy`
+        # threshold=0.9,
+    )
+```
+
+`response` strings are judged as-is. Dict responses use the first non-empty field among `text`, `summary`, `message`, `content`, `reply`, and `suggested_prompt`. Read that string yourself with `result.response_text` when you call `jev.choice` or `jev.score` directly.
+
+Pin the model when a run must be reproducible:
+
+```ini
+[pytest]
+jev_model = jev-1.13
+jev_threshold = 0.8
+```
+
 ### Repeated execution (idempotency)
 
 Use `run_repeatedly()` when the same input + idempotency key must produce stable behavior across N runs.

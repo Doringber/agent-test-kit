@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from agent_test_kit.assertions.semantic import (
+    SemanticJudge,
+    claim_list,
+    summarize_claims,
+)
+from agent_test_kit.assertions.semantic import (
+    response_text as extract_response_text,
+)
 from agent_test_kit.models.run_context import RunContext
 from agent_test_kit.models.tool_call import ToolCall
 from agent_test_kit.models.trace import AgentTrace
@@ -54,6 +62,11 @@ class AgentExecutionResult(BaseModel):
     def tool_calls(self) -> list[ToolCall]:
         return self.trace.tool_calls
 
+    @property
+    def response_text(self) -> str:
+        """Plain text of ``response`` for semantic checks."""
+        return extract_response_text(self.response)
+
     def _engine(self) -> FlowAssertionEngine:
         from agent_test_kit.assertions.flow import FlowAssertionEngine
 
@@ -88,6 +101,55 @@ class AgentExecutionResult(BaseModel):
                 actual=actual,
             )
         )
+
+    def assert_means(
+        self,
+        jev: SemanticJudge,
+        *,
+        holds: str | Iterable[str] = (),
+        lacks: str | Iterable[str] = (),
+        context: Mapping[str, Any] | None = None,
+        threshold: float | None = None,
+    ) -> Any:
+        """Judge what ``response`` means using the pytest-jev ``jev`` fixture.
+
+        Install the optional extra (``pip install 'agent-test-kit[jev]'``) and
+        request the ``jev`` fixture. Every claim is one Jev request. A passing
+        run records each claim's probability on ``assertion_outcomes``.
+
+        ``holds`` claims must be true of the reply. ``lacks`` claims must be
+        false. Pass ``context`` for a policy or retrieved documents the claim
+        names in backticks.
+        """
+        held = claim_list(holds)
+        absent = claim_list(lacks)
+        if not held and not absent:
+            raise ValueError("assert_means needs at least one claim in holds= or lacks=")
+        text = self.response_text
+        judged: list[Any] = []
+
+        def evaluate() -> None:
+            judged.append(
+                jev.expect(
+                    text,
+                    holds=held,
+                    lacks=absent,
+                    context=context,
+                    threshold=threshold,
+                )
+            )
+
+        self._capture_assertion(
+            "assert_means",
+            expected={"holds": held, "lacks": absent, "threshold": threshold},
+            actual=text,
+            assertion=evaluate,
+        )
+        claims = judged[0]
+        summary = summarize_claims(claims)
+        if summary:
+            self.assertion_outcomes[-1].actual = summary
+        return claims
 
     def assert_success(self) -> None:
         def evaluate() -> None:
