@@ -11,8 +11,10 @@ from agent_test_kit.models.execution import AgentExecutionResult
 from agent_test_kit.models.run_context import RunContext
 from agent_test_kit.models.tool_call import ToolCall
 from agent_test_kit.models.trace import AgentTrace
+from agent_test_kit.scoring import Scorer, evaluate_score, validate_unit_interval
 
 ContextFactory = Callable[[int, str], RunContext]
+RunCheck = Callable[[AgentExecutionResult], bool]
 AsyncExecutionCallable = Callable[
     [dict[str, Any], RunContext],
     Awaitable[AgentExecutionResult],
@@ -105,6 +107,45 @@ class RepeatedExecutionResult:
             label="traces",
         )
 
+    def assert_pass_rate(self, check: RunCheck, *, min_rate: float) -> float:
+        """Require ``check`` to pass on at least ``min_rate`` of runs; return the rate.
+
+        A check passes by returning True. Returning False or raising AssertionError
+        counts as a failed run, so existing ``result.assert_*`` calls can be reused.
+        """
+        validate_unit_interval("min_rate", min_rate)
+        outcomes = [_run_check(check, result) for result in self.results]
+        return self._assert_rate(outcomes, min_rate, label="check")
+
+    async def assert_score_rate(
+        self,
+        scorer: Scorer,
+        *,
+        min_score: float,
+        min_rate: float,
+    ) -> float:
+        """Require ``scorer`` to reach ``min_score`` on at least ``min_rate`` of runs."""
+        validate_unit_interval("min_score", min_score)
+        validate_unit_interval("min_rate", min_rate)
+        outcomes = [
+            (await evaluate_score(scorer, result)).value >= min_score for result in self.results
+        ]
+        return self._assert_rate(outcomes, min_rate, label=f"{scorer.name} >= {min_score:.2f}")
+
+    @staticmethod
+    def _assert_rate(outcomes: list[bool], min_rate: float, *, label: str) -> float:
+        if not outcomes:
+            raise ValueError("pass rate requires at least one run")
+        passed = sum(outcomes)
+        rate = passed / len(outcomes)
+        if rate < min_rate:
+            failing_runs = [index for index, ok in enumerate(outcomes, start=1) if not ok]
+            raise AssertionError(
+                f"Expected {label} pass rate >= {min_rate:.0%}. "
+                f"Observed: {rate:.0%} ({passed}/{len(outcomes)}); failing runs: {failing_runs}"
+            )
+        return rate
+
     @staticmethod
     def _assert_stable_values(
         values: list[Any],
@@ -156,6 +197,13 @@ async def run_repeatedly(
         contexts=tuple(contexts),
         idempotency_key=idempotency_key,
     )
+
+
+def _run_check(check: RunCheck, result: AgentExecutionResult) -> bool:
+    try:
+        return bool(check(result))
+    except AssertionError:
+        return False
 
 
 def _default_context_factory(_index: int, idempotency_key: str) -> RunContext:

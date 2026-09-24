@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         WorkflowStep,
     )
     from agent_test_kit.models.enums import ToolCallStatus
+    from agent_test_kit.scoring import Score, Scorer
 
 
 class AssertionOutcome(BaseModel):
@@ -334,6 +335,29 @@ class AgentExecutionResult(BaseModel):
                 tool=tool,
             ),
         )
+
+    async def assert_score(self, scorer: Scorer, *, min_score: float) -> Score:
+        """Score this result and require ``score.value >= min_score``."""
+        from agent_test_kit.scoring import evaluate_score, validate_unit_interval
+
+        validate_unit_interval("min_score", min_score)
+        score = await evaluate_score(scorer, self)
+
+        def evaluate() -> None:
+            if score.value < min_score:
+                detail = f" ({score.reason})" if score.reason else ""
+                raise AssertionError(
+                    f"Expected {scorer.name} score >= {min_score:.2f}. "
+                    f"Observed: {score.value:.2f}{detail}"
+                )
+
+        self._capture_assertion(
+            "assert_score",
+            expected={"scorer": scorer.name, "min_score": min_score},
+            actual={"score": score.value, "reason": score.reason, "details": score.details},
+            assertion=evaluate,
+        )
+        return score
 
     @classmethod
     def from_api_response(

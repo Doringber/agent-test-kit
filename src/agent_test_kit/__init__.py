@@ -38,6 +38,14 @@ from agent_test_kit.repetition import (
 from agent_test_kit.reporting.html_report import HtmlReportWriter
 from agent_test_kit.reporting.json_report import JsonReportWriter
 from agent_test_kit.reporting.markdown_status import MarkdownStatusReportWriter
+from agent_test_kit.scoring import (
+    ForbiddenTermsScorer,
+    RequiredFieldsScorer,
+    RequiredTermsScorer,
+    Score,
+    Scorer,
+    response_text,
+)
 from agent_test_kit.verifiers import (
     SideEffectVerifier,
     VerificationContext,
@@ -57,6 +65,7 @@ __all__ = [
     "CleanupManager",
     "CursorAgentClient",
     "FlowAssertionEngine",
+    "ForbiddenTermsScorer",
     "HtmlReportWriter",
     "HttpResultPublisher",
     "JsonReportWriter",
@@ -71,10 +80,14 @@ __all__ = [
     "RegressionExpectedOutcome",
     "RegressionToolExpectation",
     "RepeatedExecutionResult",
+    "RequiredFieldsScorer",
+    "RequiredTermsScorer",
     "ResultPublishError",
     "ResultPublisher",
     "ResultPublisherConfig",
     "RunContext",
+    "Score",
+    "Scorer",
     "SideEffectVerifier",
     "ToolStep",
     "VerificationContext",
@@ -83,6 +96,7 @@ __all__ = [
     "__version__",
     "load_regression_cases",
     "get_profile",
+    "response_text",
     "run_repeatedly",
     "run_verifiers",
 ]
