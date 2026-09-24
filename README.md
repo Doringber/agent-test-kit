@@ -308,6 +308,52 @@ aggregate.assert_responses_stable()
 aggregate.assert_traces_stable()
 ```
 
+### Behavior scoring (no single expected result)
+
+AI output can vary between runs and still be correct. Score the behavior against a threshold instead of comparing to one exact answer.
+
+| API | What it checks |
+|-----|----------------|
+| `await result.assert_score(scorer, *, min_score)` | One run scores ≥ `min_score` (0.0–1.0); score and reason appear in the report |
+| `aggregate.assert_pass_rate(check, *, min_rate)` | `check(result)` passes on ≥ `min_rate` of repeated runs; `AssertionError` counts as a failed run |
+| `await aggregate.assert_score_rate(scorer, *, min_score, min_rate)` | Scorer reaches `min_score` on ≥ `min_rate` of repeated runs |
+
+Built-in scorers are deterministic and dependency-free:
+
+| Scorer | Score |
+|--------|-------|
+| `RequiredTermsScorer(terms)` | Fraction of terms present in the response |
+| `ForbiddenTermsScorer(terms)` | 1.0 if none present, else 0.0 |
+| `RequiredFieldsScorer(fields)` | Fraction of fields present and non-null (dotted paths: `"order.status"`) |
+
+```python
+from agent_test_kit import ForbiddenTermsScorer, RequiredTermsScorer, run_repeatedly
+
+await result.assert_score(RequiredTermsScorer(["order 123", "pending"]), min_score=1.0)
+await result.assert_score(ForbiddenTermsScorer(["system prompt", "api key"]), min_score=1.0)
+
+aggregate = await run_repeatedly(agent_client, input={"order_id": 123}, runs=5, idempotency_key="k")
+aggregate.assert_pass_rate(lambda r: r.success, min_rate=0.8)
+await aggregate.assert_score_rate(RequiredTermsScorer(["pending"]), min_score=1.0, min_rate=0.8)
+```
+
+Judgment-based scoring (LLM judge, embeddings, rubric) lives in **your** agent repo. Implement the `Scorer` protocol; `score` may be sync or async:
+
+```python
+from agent_test_kit import Score, response_text
+
+
+class GroundednessJudge:
+    name = "groundedness"
+
+    async def score(self, result) -> Score:
+        verdict = await my_llm_judge(response_text(result))
+        return Score(verdict.value, reason=verdict.rationale)
+
+
+await result.assert_score(GroundednessJudge(), min_score=0.8)
+```
+
 ### Regression cases (YAML-driven)
 
 Load cases with `load_regression_cases(path)`; evaluate with `case.evaluate(result)`.
@@ -621,14 +667,20 @@ from agent_test_kit import (
     AgentExecutionResult,
     AnyOfStep,
     CleanupManager,
+    ForbiddenTermsScorer,
     HtmlReportWriter,
     JsonReportWriter,
     OptionalStep,
     PromptReviewClient,
     RepeatedExecutionResult,
+    RequiredFieldsScorer,
+    RequiredTermsScorer,
+    Score,
+    Scorer,
     ToolStep,
     get_profile,
     load_regression_cases,
+    response_text,
     run_repeatedly,
     run_verifiers,
     SideEffectVerifier,
