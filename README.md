@@ -72,9 +72,9 @@ Redaction is on by default — tokens, credentials, and sensitive args never hit
 
 ## Split of responsibility
 
-**Your agent repo owns:** test cases, prompts, fixtures, domain verifiers, cleanup hooks.
+**Your agent repo owns:** test cases, prompts, fixtures, domain verifiers, cleanup hooks, and any LLM judge.
 
-**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, JSON/HTML reports, verifier orchestration.
+**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, deterministic behavior scorers, goal-based regression cases, JSON/HTML reports with a GO / NO-GO readiness block, and verifier orchestration.
 
 The pytest plugin loads automatically when installed — no `pytest_plugins` line needed.
 
@@ -502,6 +502,12 @@ Environment variables (`AGENT_TEST_` prefix):
 | `AGENT_TEST_AGENT_ID` | `billing-agent` | Report metadata |
 | `AGENT_TEST_ENVIRONMENT` | `integration` | Report metadata |
 | `AGENT_TEST_TIMEOUT_SECONDS` | `900` | HTTP timeout |
+| `AGENT_TEST_AGENT_VERSION` | `1.4.0` | Release fingerprint |
+| `AGENT_TEST_MODEL` | `gpt-4.1` | Release fingerprint |
+| `AGENT_TEST_PROMPT_VERSION` | `prompts-2026-09-24` | Release fingerprint |
+| `AGENT_TEST_KNOWLEDGE_VERSION` | `kb-2026-09-24` | RAG index or knowledge-base version in the release fingerprint |
+
+A fingerprint change between this run and `--agent-baseline` is a note in the GO / NO-GO block. It does not fail the run.
 
 ### Step 4 — Pick the right client
 
@@ -543,7 +549,7 @@ See [First test](#first-test). More examples: [`examples/consumer_test_example.p
 | `agent_test_config` | `AgentTestConfig` from env / defaults |
 | `agent_client` | `AgentClient` + auto report attachment |
 | `cursor_agent_client` | `CursorAgentClient` + auto report attachment |
-| `agent_scenario` | Attach results + run verifiers |
+| `agent_scenario` | Attach results, verifiers, and `attach_regression_evaluation` for persona readiness |
 | `agent_cleanup` | Async cleanup manager (runs on teardown) |
 
 ```python
@@ -668,7 +674,7 @@ pytest tests/ -m "not agent_e2e and not agent_write_action" -q \
   --agent-report-html=reports/ci-results.html
 ```
 
-Store `reports/` as a CI artifact (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in this repo).
+Store `reports/` as a CI artifact (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in this repo). To compare with the last green report, add `--agent-baseline=reports/main.json`. Thresholds and enforcement are in [Generate reports](#step-11--generate-reports).
 
 Optional: upload HTML to S3 after E2E — see [E2E full flow guide](docs/AGENT_E2E_FULL_FLOW.md#step-9--verify-ci-output).
 
