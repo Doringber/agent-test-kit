@@ -34,11 +34,14 @@
 
 ## The report is the product
 
-Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generates a single self-contained HTML file — tool-flow strips, MCP chips, prompt review diffs, golden guard outcomes — the same UI whether you ran mock tests or live E2E.
+Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generates a single self-contained HTML file — a GO / NO-GO readiness banner, tool-flow strips, MCP chips, prompt review diffs, golden guard outcomes — the same UI whether you ran mock tests or live E2E.
 
 ```
 ┌─ Agent test report ─────────────────────────────────────────────┐
 │  Agent: billing-agent          Env: integration                 │
+├─────────────────────────────────────────────────────────────────┤
+│  Release readiness  NO-GO                                       │
+│  Blocking: persona "novice" pass rate 60% is below 80%          │
 ├─────────────────────────────────────────────────────────────────┤
 │  Scenarios 6   Passed 6   Tool calls 14   Tokens 2.1k           │
 ├─────────────────────────────────────────────────────────────────┤
@@ -49,9 +52,11 @@ Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generat
 │  │ get_inv… │    │ get_iss… │    │ create…  │                   │
 │  └──────────┘    └──────────┘    └──────────┘                   │
 ├─────────────────────────────────────────────────────────────────┤
-│  ▾ Assertions  ▾ Tool calls  ▾ Timeline  ▾ Side effects       │
+│  ▾ Assertions  ▾ Tool calls  ▾ Timeline  ▾ Side effects         │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+The banner is the release evidence: failed scenarios, security failures, duplicate writes, and any persona or baseline threshold you set. The pytest run stays green unless you pass `--agent-enforce-readiness`.
 
 ```bash
 pytest tests/ -v \
