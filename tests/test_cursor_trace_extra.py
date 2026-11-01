@@ -266,6 +266,24 @@ def test_stream_result_extracts_explicit_total_tokens(
 
 
 @pytest.mark.agent_unit
+@pytest.mark.parametrize(
+    "payload_key",
+    ["mcpToolCall", "getMcpToolsToolCall"],
+)
+def test_nested_tool_call_payload_must_be_object(payload_key: str) -> None:
+    event = json.dumps(
+        {
+            "type": "tool_call",
+            "subtype": "called",
+            "tool_call": {payload_key: ["invalid"]},
+        }
+    )
+
+    with pytest.raises(ValueError, match=rf"{payload_key} must be an object"):
+        parse_stream_json_stdout(event)
+
+
+@pytest.mark.agent_unit
 @pytest.mark.parametrize("field", ["tool_calls", "events"])
 def test_nested_trace_collections_must_be_lists(field: str) -> None:
     with pytest.raises(ValueError, match=rf"trace\.{field} must be a list"):
