@@ -12,11 +12,6 @@
 </pre>
 
 <p align="center">
-  <strong>Shared pytest framework for testing AI agents.</strong><br>
-  Mock in CI · live HTTP when you opt in · HTML reports humans actually open.
-</p>
-
-<p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#agent-assertions-reference">Assertions</a> ·
   <a href="#the-report-is-the-product">Reports</a> ·
@@ -29,6 +24,21 @@
   <img src="https://img.shields.io/badge/pytest-8.2+-0A9EDC?logo=pytest&logoColor=white" alt="pytest">
   <img src="https://img.shields.io/badge/version-0.1.2-blue" alt="0.1.2">
 </p>
+
+Test what your AI agent actually does, not just what it says. Check tool calls, their order and arguments, and side effects, with a self-contained HTML report.
+
+Run the included tests (Python 3.11+):
+
+```bash
+git clone https://github.com/Doringber/agent-test-kit.git
+cd agent-test-kit
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest
+```
+
+Tests run against mocks by default. Live tests are opt-in. See Quick start to test your own agent.
 
 ---
 
