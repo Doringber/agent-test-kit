@@ -93,6 +93,7 @@ markers = [
     "agent_write_action: Tests that perform write actions in target systems",
     "agent_nondeterministic: Tests that may flake due to model variance",
     "agent_multi_mcp: Multi-MCP server workflow tests",
+    "agent_eval: Registered agent evals selected by name for the agent_eval fixture",
 ]
 
 [tool.coverage.run]

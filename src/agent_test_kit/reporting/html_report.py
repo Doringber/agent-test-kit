@@ -72,7 +72,7 @@ def _flow_sequence(tool_calls: list[dict[str, Any]]) -> str:
         step = (
             f'<span class="flow-step {_flow_status_class(status)}">'
             f'<span class="flow-badge {_flow_kind_class(kind)}">{escape(kind.upper())}</span>'
-            f"<span class=\"flow-name\">{escape(label)}</span>"
+            f'<span class="flow-name">{escape(label)}</span>'
             f"</span>"
         )
         steps.append(step)
@@ -215,6 +215,24 @@ def _readiness_block(readiness: dict[str, Any] | None) -> str:
         parts.append(f"<h4>Baseline {_text(baseline.get('baseline_run_id'))}</h4>{body}")
     parts.append("</section>")
     return "".join(parts)
+
+
+def _phases(item: dict[str, Any]) -> str:
+    phases: list[str] = []
+    for violation in item.get("violations") or []:
+        phase = str(violation.get("phase") or "")
+        if phase and phase not in phases:
+            phases.append(phase)
+    return ", ".join(phases) if phases else "—"
+
+
+def _optional_details(title: str, headers: list[str], rows: list[list[Any]]) -> str:
+    if not rows:
+        return ""
+    return (
+        f"<details open><summary>{escape(title)} ({len(rows)})</summary>"
+        f"{_table(headers, rows)}</details>"
+    )
 
 
 def _behavior_rows(scenario: dict[str, Any]) -> list[list[Any]]:
@@ -384,6 +402,26 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
             ]
             for assertion in scenario["assertions"]
         ]
+        guardrail_rows = [
+            [
+                item["name"],
+                item.get("mode"),
+                item["passed"],
+                _phases(item),
+                item.get("message"),
+            ]
+            for item in scenario.get("guardrails") or []
+        ]
+        eval_rows = [
+            [
+                item["name"],
+                f"{float(item['score']):.2f}",
+                f"{float(item['threshold']):.2f}",
+                item["passed"],
+                item.get("reason"),
+            ]
+            for item in scenario.get("evals") or []
+        ]
         verification_rows = [
             [
                 verification["verifier_name"],
@@ -423,9 +461,7 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
         )
         flow_html = _flow_sequence(scenario["tool_calls"])
         kind = scenario.get("scenario_kind")
-        kind_badge = (
-            f'<span class="scenario-kind">{escape(str(kind))}</span>' if kind else ""
-        )
+        kind_badge = f'<span class="scenario-kind">{escape(str(kind))}</span>' if kind else ""
         prompt_review_html = _prompt_review_block(scenario)
         golden_html = _golden_outcome_block(scenario)
         connected = scenario.get("connected_mcp_servers") or []
@@ -442,7 +478,9 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
             injection_html = f'<span class="injection-flag {css}">{label}</span>'
         status_class = escape(status)
         return f"""<section class="card scenario-card {status_class}">
-<h3>{_text(scenario["name"])}{kind_badge}{injection_html} — <span class="status {status_class}">{escape(status)}</span></h3>
+<h3>{_text(scenario["name"])}{kind_badge}{injection_html} — <span class="status {status_class}">{
+            escape(status)
+        }</span></h3>
 {_table(["Field", "Value"], summary)}
 <h4>Connected MCP servers</h4>
 {mcp_html}
@@ -452,6 +490,20 @@ details{{margin:.6rem 0}}a{{color:var(--accent)}}
 {flow_html}
 <details open><summary>Assertions ({len(assertion_rows)})</summary>
 {_table(["Name", "Passed", "Expected", "Actual", "Message"], assertion_rows)}</details>
+{
+            _optional_details(
+                "Guardrails",
+                ["Guardrail", "Mode", "Passed", "Phase", "Message"],
+                guardrail_rows,
+            )
+        }
+{
+            _optional_details(
+                "Evals",
+                ["Eval", "Score", "Threshold", "Passed", "Reason"],
+                eval_rows,
+            )
+        }
 <details><summary>Side effects ({len(verification_rows)})</summary>
 {verification_table}</details>
 <details><summary>Tool / MCP calls ({len(tool_rows)})</summary>

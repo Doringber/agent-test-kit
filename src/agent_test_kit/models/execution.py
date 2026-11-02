@@ -18,6 +18,8 @@ if TYPE_CHECKING:
         StatusFilter,
         WorkflowStep,
     )
+    from agent_test_kit.evals.base import Eval, EvalReport
+    from agent_test_kit.guardrails.base import Guardrail, GuardrailReport
     from agent_test_kit.models.enums import ToolCallStatus
     from agent_test_kit.scoring import Score, Scorer
 
@@ -47,6 +49,8 @@ class AgentExecutionResult(BaseModel):
     duration_ms: int | None = None
     assertions: list[str] = Field(default_factory=list)
     assertion_outcomes: list[AssertionOutcome] = Field(default_factory=list)
+    guardrail_checks: list[Any] = Field(default_factory=list, exclude=True)
+    eval_checks: list[Any] = Field(default_factory=list, exclude=True)
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -358,6 +362,48 @@ class AgentExecutionResult(BaseModel):
             assertion=evaluate,
         )
         return score
+
+    def assert_guardrails(self, guardrails: Sequence[Guardrail] | Guardrail) -> GuardrailReport:
+        """Run guardrails offline and record the outcome like other assertions."""
+        from agent_test_kit.guardrails.base import check_guardrails
+
+        report = check_guardrails(self, guardrails)
+        self.guardrail_checks.extend(report.checks)
+
+        def evaluate() -> None:
+            report.assert_passed()
+
+        self._capture_assertion(
+            "assert_guardrails",
+            expected=[item.name for item in report.checks],
+            actual=[
+                {"name": check.name, "passed": check.passed, "message": check.message}
+                for check in report.checks
+            ],
+            assertion=evaluate,
+        )
+        return report
+
+    def assert_evals(self, evals: Sequence[Eval] | Eval) -> EvalReport:
+        """Score evals and record pass/fail like other assertions."""
+        from agent_test_kit.evals.base import run_evals
+
+        report = run_evals(self, evals)
+        self.eval_checks.extend(report.results)
+
+        def evaluate() -> None:
+            report.assert_passed()
+
+        self._capture_assertion(
+            "assert_evals",
+            expected=[{"name": item.name, "threshold": item.threshold} for item in report.results],
+            actual=[
+                {"name": item.name, "score": item.score, "passed": item.passed}
+                for item in report.results
+            ],
+            assertion=evaluate,
+        )
+        return report
 
     @classmethod
     def from_api_response(

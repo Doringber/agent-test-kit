@@ -41,6 +41,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Register markers before collection without importing the measured package."""
+    config.addinivalue_line(
+        "markers",
+        "agent_eval(name): run registered evals by name via the agent_eval fixture",
+    )
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Load runtime hooks only after coverage startup is complete."""

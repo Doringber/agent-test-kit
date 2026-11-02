@@ -14,6 +14,9 @@ from agent_test_kit.models.execution import AgentExecutionResult
 from agent_test_kit.models.report import (
     AgentTestRunReport,
     AssertionReport,
+    EvalCheckReport,
+    GuardrailCheckReport,
+    GuardrailViolationReport,
     ScenarioReport,
     ScenarioStatus,
     SideEffectVerificationReport,
@@ -24,6 +27,51 @@ from agent_test_kit.verifiers.protocols import VerificationResult
 
 if TYPE_CHECKING:
     from agent_test_kit.regression import RegressionRunEvaluation
+
+
+def _unique(items: Sequence[Any]) -> list[Any]:
+    unique: list[Any] = []
+    for item in items:
+        if item not in unique:
+            unique.append(item)
+    return unique
+
+
+def _guardrail_reports(checks: Sequence[Any]) -> list[GuardrailCheckReport]:
+    reports: list[GuardrailCheckReport] = []
+    for check in checks:
+        reports.append(
+            GuardrailCheckReport(
+                name=check.name,
+                passed=bool(check.passed),
+                mode=check.mode,
+                message=check.message,
+                violations=[
+                    GuardrailViolationReport(
+                        guardrail=item.guardrail,
+                        message=item.message,
+                        phase=item.phase,
+                        evidence=dict(item.evidence),
+                    )
+                    for item in check.violations
+                ],
+            )
+        )
+    return reports
+
+
+def _eval_reports(checks: Sequence[Any]) -> list[EvalCheckReport]:
+    return [
+        EvalCheckReport(
+            name=check.name,
+            passed=bool(check.passed),
+            score=float(check.score),
+            threshold=float(check.threshold),
+            reason=check.reason,
+            details=dict(check.details),
+        )
+        for check in checks
+    ]
 
 
 def _evidence_links(value: Any) -> list[str]:
@@ -68,6 +116,8 @@ class JsonReportWriter:
         execution_result: AgentExecutionResult | None = None,
         verification_results: Sequence[VerificationResult] = (),
         regression_evaluation: RegressionRunEvaluation | None = None,
+        guardrail_checks: Sequence[Any] = (),
+        eval_checks: Sequence[Any] = (),
     ) -> None:
         extra = extra or {}
         evaluation = regression_evaluation
@@ -87,6 +137,22 @@ class JsonReportWriter:
             ]
             if execution_result is not None
             else extra.get("assertions", [])
+        )
+        guardrail_reports = _guardrail_reports(
+            _unique(
+                [
+                    *(execution_result.guardrail_checks if execution_result is not None else []),
+                    *guardrail_checks,
+                ]
+            )
+        )
+        eval_reports = _eval_reports(
+            _unique(
+                [
+                    *(execution_result.eval_checks if execution_result is not None else []),
+                    *eval_checks,
+                ]
+            )
         )
         verification_reports = [
             SideEffectVerificationReport(
@@ -133,6 +199,8 @@ class JsonReportWriter:
                 tool_calls=tool_calls,
                 timeline=execution_result.trace.events if execution_result is not None else [],
                 assertions=assertions,
+                guardrails=guardrail_reports,
+                evals=eval_reports,
                 side_effect_verifications=verification_reports,
                 error_message=error_message,
                 retry_count=sum(max(call.attempt - 1, 0) for call in tool_calls),
@@ -156,8 +224,7 @@ class JsonReportWriter:
                     or ("prompt_review" if response_dict.get("suggested_prompt") else None)
                 ),
                 original_prompt=(
-                    extra.get("original_prompt")
-                    or response_dict.get("original_prompt")
+                    extra.get("original_prompt") or response_dict.get("original_prompt")
                 ),
                 suggested_prompt=(
                     extra.get("suggested_prompt")
@@ -184,9 +251,7 @@ class JsonReportWriter:
                     extra.get("expected_mcp_servers") or self.expected_mcp_servers or []
                 ),
                 violation_types=list(
-                    extra.get("violation_types")
-                    or response_dict.get("violation_types")
-                    or []
+                    extra.get("violation_types") or response_dict.get("violation_types") or []
                 ),
                 golden_outcome=extra.get("golden_outcome") or response_dict.get("golden_outcome"),
                 expected_classification=extra.get("expected_classification")

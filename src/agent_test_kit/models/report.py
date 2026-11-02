@@ -26,6 +26,36 @@ class AssertionReport(BaseModel):
     message: str | None = None
 
 
+class GuardrailViolationReport(BaseModel):
+    """One guardrail violation included in a scenario report."""
+
+    guardrail: str
+    message: str
+    phase: Literal["message", "tool_call", "trace"] = "trace"
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class GuardrailCheckReport(BaseModel):
+    """Outcome of one guardrail, offline or online."""
+
+    name: str
+    passed: bool
+    mode: Literal["offline", "online"] = "offline"
+    message: str | None = None
+    violations: list[GuardrailViolationReport] = Field(default_factory=list)
+
+
+class EvalCheckReport(BaseModel):
+    """Score and pass/fail for one eval."""
+
+    name: str
+    passed: bool
+    score: float
+    threshold: float
+    reason: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class SideEffectVerificationReport(BaseModel):
     """Outcome of an external side-effect verifier."""
 
@@ -53,6 +83,8 @@ class ScenarioReport(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     timeline: list[TraceEvent] = Field(default_factory=list)
     assertions: list[AssertionReport] = Field(default_factory=list)
+    guardrails: list[GuardrailCheckReport] = Field(default_factory=list)
+    evals: list[EvalCheckReport] = Field(default_factory=list)
     side_effect_verifications: list[SideEffectVerificationReport] = Field(default_factory=list)
     error_message: str | None = None
     retry_count: int = 0
@@ -65,6 +97,7 @@ class ScenarioReport(BaseModel):
     suggested_prompt: str | None = None
     endpoint_base_url: str | None = None
     connected_mcp_servers: list[str] = Field(default_factory=list)
+    expected_mcp_servers: list[str] = Field(default_factory=list)
     injection_detected: bool | None = None
     violation_types: list[str] = Field(default_factory=list)
     golden_outcome: str | None = None
