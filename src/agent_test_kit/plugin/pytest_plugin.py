@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -16,6 +16,13 @@ from agent_test_kit.client.agent_client import AgentClient
 from agent_test_kit.client.config import AgentTestConfig
 from agent_test_kit.client.cursor_agent_client import CursorAgentClient
 from agent_test_kit.client.prompt_ai_helper_profiles import get_profile
+from agent_test_kit.evals.base import Eval, EvalReport, get_eval
+from agent_test_kit.guardrails.base import (
+    Guardrail,
+    GuardrailMonitor,
+    GuardrailReport,
+    check_guardrails,
+)
 from agent_test_kit.models.execution import AgentExecutionResult
 from agent_test_kit.models.report import AgentTestRunReport, ReleaseReadiness, ScenarioStatus
 from agent_test_kit.reporting.html_report import HtmlReportWriter
@@ -40,6 +47,8 @@ class PluginState:
     results: dict[str, AgentExecutionResult] = field(default_factory=dict)
     verification_results: dict[str, list[VerificationResult]] = field(default_factory=dict)
     regression_evaluations: dict[str, RegressionRunEvaluation] = field(default_factory=dict)
+    guardrail_checks: dict[str, list[Any]] = field(default_factory=dict)
+    eval_checks: dict[str, list[Any]] = field(default_factory=dict)
     phase_reports: dict[str, dict[str, pytest.TestReport]] = field(default_factory=dict)
     html_path: Path | None = None
     write_json: bool = True
@@ -121,6 +130,14 @@ class ScenarioResultRecorder:
         if state is not None:
             state.regression_evaluations[self.nodeid] = evaluation
 
+    def attach_guardrail_report(self, report: GuardrailReport) -> None:
+        """Record guardrail checks on the current scenario."""
+        attach_guardrail_report(self.config, self.nodeid, report)
+
+    def attach_eval_report(self, report: EvalReport) -> None:
+        """Record eval scores on the current scenario."""
+        attach_eval_report(self.config, self.nodeid, report)
+
     async def verify(
         self,
         verifiers: Sequence[SideEffectVerifier],
@@ -187,6 +204,106 @@ def agent_scenario(request: pytest.FixtureRequest) -> ScenarioResultRecorder:
     return ScenarioResultRecorder(request.config, request.node.nodeid)
 
 
+@dataclass
+class _GuardrailFixture:
+    """Run guardrails for the current test and attach them to the report."""
+
+    config: pytest.Config
+    nodeid: str
+    monitors: list[GuardrailMonitor] = field(default_factory=list)
+    _closed: bool = False
+
+    def check(
+        self,
+        result: AgentExecutionResult,
+        guardrails: Guardrail | Sequence[Guardrail],
+        *,
+        fail: bool = True,
+    ) -> GuardrailReport:
+        """Run guardrails offline. Failures are recorded even when the assertion fails."""
+        report = check_guardrails(result, guardrails)
+        result.guardrail_checks.extend(report.checks)
+        attach_guardrail_report(self.config, self.nodeid, report)
+        if fail:
+            report.assert_passed()
+        return report
+
+    def monitor(
+        self,
+        guardrails: Guardrail | Sequence[Guardrail],
+        *,
+        fail_fast: bool = False,
+    ) -> GuardrailMonitor:
+        """Online hook. Trace rules run when the monitor or this fixture finishes."""
+        monitor = GuardrailMonitor(guardrails, fail_fast=fail_fast)
+        self.monitors.append(monitor)
+        return monitor
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for monitor in self.monitors:
+            if not monitor.finished:
+                monitor.finish(notify=False, raise_on_violation=False)
+            if monitor.last_report is not None:
+                attach_guardrail_report(self.config, self.nodeid, monitor.last_report)
+
+
+@dataclass
+class _EvalFixture:
+    """Run registered or explicit evals for the current test."""
+
+    config: pytest.Config
+    nodeid: str
+    names: list[str]
+
+    def run(
+        self,
+        result: AgentExecutionResult,
+        evals: Eval | Sequence[Eval] | None = None,
+        *,
+        fail: bool = True,
+    ) -> EvalReport:
+        """Score evals. Marker names are used when ``evals`` is omitted."""
+        from agent_test_kit.evals.base import run_evals
+
+        selected: Eval | Sequence[Eval]
+        if evals is None:
+            if not self.names:
+                raise RuntimeError(
+                    "No evals to run. Pass evals=[...] or mark the test with "
+                    "@pytest.mark.agent_eval('registered_name')."
+                )
+            selected = [get_eval(name) for name in self.names]
+        else:
+            selected = evals
+        report = run_evals(result, selected)
+        result.eval_checks.extend(report.results)
+        attach_eval_report(self.config, self.nodeid, report)
+        if fail:
+            report.assert_passed()
+        return report
+
+
+@pytest.fixture
+def agent_guardrails(request: pytest.FixtureRequest) -> Iterator[_GuardrailFixture]:
+    """Offline ``check`` and online ``monitor`` for guardrails on this test."""
+    runner = _GuardrailFixture(request.config, request.node.nodeid)
+    yield runner
+    runner.close()
+
+
+@pytest.fixture
+def agent_eval(request: pytest.FixtureRequest) -> _EvalFixture:
+    """Run evals named by ``@pytest.mark.agent_eval`` or passed to ``run``."""
+    return _EvalFixture(
+        request.config,
+        request.node.nodeid,
+        _agent_eval_names(request.node),
+    )
+
+
 @pytest_asyncio.fixture
 async def agent_cleanup() -> AsyncIterator[CleanupManager]:
     manager = CleanupManager()
@@ -245,6 +362,8 @@ def _record_scenario_from_reports(
         execution_result=stored_result,
         verification_results=state.verification_results.get(item.nodeid, []),
         regression_evaluation=state.regression_evaluations.get(item.nodeid),
+        guardrail_checks=state.guardrail_checks.get(item.nodeid, []),
+        eval_checks=state.eval_checks.get(item.nodeid, []),
     )
 
 
@@ -314,6 +433,46 @@ def store_execution_result(
     if state is None:
         return
     state.results[nodeid] = result
+
+
+def _agent_eval_names(node: pytest.Item | pytest.Collector) -> list[str]:
+    names: list[str] = []
+    for marker in node.iter_markers("agent_eval"):
+        for arg in marker.args:
+            if not isinstance(arg, str) or not arg.strip():
+                raise ValueError("agent_eval marker arguments must be non-empty eval names")
+            names.append(arg)
+    return names
+
+
+def attach_guardrail_report(
+    config: pytest.Config,
+    nodeid: str,
+    report: GuardrailReport,
+) -> None:
+    """Attach guardrail checks to a report scenario."""
+    state = config.stash.get(_STASH_KEY, None)
+    if state is None:
+        return
+    bucket = state.guardrail_checks.setdefault(nodeid, [])
+    for check in report.checks:
+        if check not in bucket:
+            bucket.append(check)
+
+
+def attach_eval_report(
+    config: pytest.Config,
+    nodeid: str,
+    report: EvalReport,
+) -> None:
+    """Attach eval results to a report scenario."""
+    state = config.stash.get(_STASH_KEY, None)
+    if state is None:
+        return
+    bucket = state.eval_checks.setdefault(nodeid, [])
+    for result in report.results:
+        if result not in bucket:
+            bucket.append(result)
 
 
 def attach_verification_results(

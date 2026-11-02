@@ -5,6 +5,8 @@
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#agent-assertions-reference">Assertions</a> ·
+  <a href="#guardrails">Guardrails</a> ·
+  <a href="#evals">Evals</a> ·
   <a href="#the-report-is-the-product">Reports</a> ·
   <a href="#step-by-step-use-in-your-agent-repo">Full guide</a> ·
   <a href="docs/AGENT_E2E_FULL_FLOW.md">E2E flow</a>
@@ -35,7 +37,7 @@ Tests run against mocks by default. Live tests are opt-in. See Quick start to te
 
 ## The report is the product
 
-Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generates a single self-contained HTML file — a GO / NO-GO readiness banner, tool-flow strips, MCP chips, prompt review diffs, golden guard outcomes — the same UI whether you ran mock tests or live E2E.
+Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generates a single self-contained HTML file — a GO / NO-GO readiness banner, tool-flow strips, MCP chips, prompt review diffs, golden guard outcomes, and guardrail and eval results — the same UI whether you ran mock tests or live E2E.
 
 ```
 ┌─ Agent test report ─────────────────────────────────────────────┐
@@ -53,7 +55,7 @@ Most agent tests dump JSON into CI logs nobody reads. **agent-test-kit** generat
 │  │ get_inv… │    │ get_iss… │    │ create…  │                   │
 │  └──────────┘    └──────────┘    └──────────┘                   │
 ├─────────────────────────────────────────────────────────────────┤
-│  ▾ Assertions  ▾ Tool calls  ▾ Timeline  ▾ Side effects         │
+│  ▾ Assertions  ▾ Guardrails  ▾ Evals  ▾ Tool calls  ▾ Timeline   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,7 +77,7 @@ Redaction is on by default — tokens, credentials, and sensitive args never hit
 
 **Your agent repo owns:** test cases, prompts, fixtures, domain verifiers, cleanup hooks, and any LLM judge.
 
-**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, deterministic behavior scorers, goal-based regression cases, JSON/HTML reports with a GO / NO-GO readiness block, and verifier orchestration.
+**This package provides:** HTTP/Cursor clients, normalized traces, workflow assertions, offline and online guardrails, evals, deterministic behavior scorers, goal-based regression cases, JSON/HTML reports with a GO / NO-GO readiness block, and verifier orchestration.
 
 The pytest plugin loads automatically when installed — no `pytest_plugins` line needed.
 
@@ -121,6 +123,7 @@ markers =
     agent_integration: deployed agent, read-only
     agent_e2e: live HTTP (opt-in)
     agent_write_action: real writes (opt-in)
+    agent_eval: registered evals selected by name
 addopts = -m "not agent_e2e and not agent_write_action"
 ```
 
@@ -360,7 +363,159 @@ class GroundednessJudge:
 await result.assert_score(GroundednessJudge(), min_score=0.8)
 ```
 
-### Regression cases (YAML-driven)
+## Guardrails
+
+A guardrail checks assistant output and tool flow. The same object runs offline, against a recorded trace, and online, against a live stream. Message and tool-call hooks run as each event arrives. Trace hooks, such as a required final tool, run when the run finishes.
+
+Subclass `Guardrail` or use `@guardrail`. Return a violation message, or `None` when the event is allowed.
+
+| Guardrail | What it checks |
+|-----------|----------------|
+| `NoProfanityGuardrail(terms=None, *, extra_terms=())` | Disallowed language in assistant output. Defaults to a small profanity list. `terms` replaces that list; `extra_terms` adds words or phrases. |
+| `RequiredFinalToolGuardrail(tool_name, *, server=None)` | The last tool call is `tool_name` and succeeded. |
+| `must_open_pull_request(tool_name="create_pull_request", *, server=None)` | Flow rule: the run ends by opening a pull request. |
+
+Failures are `AssertionError`s. They are stored on the result and rendered in the HTML report under **Guardrails**, including when the test fails.
+
+### Offline guardrail
+
+```python
+import pytest
+from agent_test_kit import (
+    AgentExecutionResult,
+    NoProfanityGuardrail,
+    ToolCall,
+    must_open_pull_request,
+)
+from agent_test_kit.models.enums import ToolCallStatus, ToolOperationKind
+from agent_test_kit.models.trace import AgentTrace
+
+
+@pytest.mark.agent_unit
+def test_recorded_run_stays_within_guardrails(agent_guardrails):
+    result = AgentExecutionResult(
+        success=True,
+        run_id="run_1",
+        response="I opened the pull request.",
+        trace=AgentTrace(
+            tool_calls=[
+                ToolCall(
+                    server="github",
+                    name="create_pull_request",
+                    status=ToolCallStatus.SUCCESS,
+                    operation_kind=ToolOperationKind.WRITE,
+                )
+            ]
+        ),
+    )
+    agent_guardrails.check(
+        result,
+        [NoProfanityGuardrail(), must_open_pull_request(server="github")],
+    )
+```
+
+`check_guardrails(result, guardrails)` is the same check without pytest. `result.assert_guardrails(...)` records it like the other assertions.
+
+### Online guardrail
+
+`GuardrailMonitor` is the streaming hook. Call `handle` (or `on_message` / `on_tool_call`) for each event. `fail_fast=True` raises `GuardrailViolationError` at the first violation so middleware can stop the run. Leave it false to collect every violation, then call `report.assert_passed()`.
+
+```python
+from agent_test_kit import GuardrailMonitor, NoProfanityGuardrail, must_open_pull_request
+
+
+def test_live_stream_opens_pr(agent_guardrails):
+    monitor = agent_guardrails.monitor(
+        [NoProfanityGuardrail(), must_open_pull_request(server="github")],
+        fail_fast=True,
+    )
+
+    def on_agent_event(event: dict) -> None:
+        monitor.handle(event)
+
+    on_agent_event({"type": "message", "text": "I opened the pull request."})
+    on_agent_event({
+        "type": "tool_call",
+        "server": "github",
+        "name": "create_pull_request",
+        "status": "success",
+        "operation_kind": "write",
+    })
+    monitor.finish().assert_passed()
+```
+
+Outside pytest, construct `GuardrailMonitor` yourself. The fixture records the online result on teardown, including when a violation aborts the test.
+
+### Write your own
+
+```python
+from agent_test_kit import Guardrail, ToolCall, guardrail
+
+
+@guardrail(phase="message")
+def no_secrets(text: str, *, role: str = "assistant") -> str | None:
+    if role == "assistant" and "sk-" in text:
+        return "assistant output looks like a secret key"
+    return None
+
+
+class NoDeleteGuardrail(Guardrail):
+    name = "no_delete"
+
+    def on_tool_call(self, call: ToolCall) -> str | None:
+        if call.name.startswith("delete_"):
+            return f"delete tool is not allowed: {call.name}"
+        return None
+```
+
+`phase` is `"message"`, `"tool_call"`, or `"trace"`. A decorated guardrail is a `Guardrail`, so it works with `check_guardrails` and `GuardrailMonitor`.
+
+## Evals
+
+An eval scores one run from 0.0 to 1.0 and passes when the score is at least its threshold. Register it with `@eval_case`. Run it with the `agent_eval` fixture, or call `run_evals` / `result.assert_evals` directly. `@pytest.mark.agent_eval("name")` selects registered evals by name when you call `agent_eval.run(result)` without a list.
+
+| Eval | Score |
+|------|-------|
+| `RequiredTermsEval(terms, *, threshold=1.0)` | Fraction of terms present in the response |
+| `RequiredToolsEval(tools, *, threshold=1.0)` | Fraction of required tools that were called. A tool is a name or `(server, name)`. |
+
+```python
+import pytest
+from agent_test_kit import AgentExecutionResult, RequiredTermsEval, eval_case, response_text
+
+
+@eval_case(threshold=1.0)
+def mentions_pull_request(result) -> float:
+    return 1.0 if "pull request" in response_text(result).casefold() else 0.0
+
+
+@pytest.mark.agent_eval("mentions_pull_request")
+@pytest.mark.agent_unit
+def test_mentions_pull_request(agent_eval):
+    result = AgentExecutionResult(
+        success=True,
+        run_id="run_1",
+        response="I opened the pull request.",
+    )
+    agent_eval.run(result)
+
+
+def test_terms_with_an_explicit_eval(agent_eval):
+    result = AgentExecutionResult(success=True, run_id="run_2", response="refund for order 123")
+    agent_eval.run(result, [RequiredTermsEval(["refund", "123"])])
+```
+
+`run_evals(result, [mentions_pull_request])` is the same call outside pytest. Scores, thresholds, and pass/fail appear in the HTML report under **Evals**. A failing eval raises `AssertionError` and is still recorded.
+
+Subclass `Eval` and implement `score` to return a `Score`, a float, or a bool. `register_eval` adds it under `evaluation.name`.
+
+Runnable copies of the offline guardrail, the online guardrail, and an eval: [`examples/guardrails_and_evals.py`](examples/guardrails_and_evals.py).
+
+```bash
+python examples/guardrails_and_evals.py
+```
+
+## Regression cases (YAML-driven)
 
 Load cases with `load_regression_cases(path)`; evaluate with `case.evaluate(result)`.
 
@@ -426,7 +581,7 @@ for case in load_regression_cases("tests/data/behavior_cases.yaml"):
 
 `case.run()` executes `runs` times with one idempotency key (`regression:<id>` by default) and checks that every scorer named in `behavior.scores` was provided before calling the agent. To score results you already have, use `await case.evaluate_runs(results, scorers=...)`. Full example: [`examples/behavior_regression_cases.yaml`](examples/behavior_regression_cases.yaml).
 
-### Typical PR-review workflow (all together)
+## Typical PR-review workflow
 
 ```python
 result.assert_success()
@@ -550,7 +705,9 @@ See [First test](#first-test). More examples: [`examples/consumer_test_example.p
 | `agent_test_config` | `AgentTestConfig` from env / defaults |
 | `agent_client` | `AgentClient` + auto report attachment |
 | `cursor_agent_client` | `CursorAgentClient` + auto report attachment |
-| `agent_scenario` | Attach results, verifiers, and `attach_regression_evaluation` for persona readiness |
+| `agent_scenario` | Attach results, verifiers, guardrail and eval reports, and `attach_regression_evaluation` |
+| `agent_guardrails` | Offline `check` and online `monitor` for guardrails |
+| `agent_eval` | Run evals passed in, or named by `@pytest.mark.agent_eval` |
 | `agent_cleanup` | Async cleanup manager (runs on teardown) |
 
 ```python
@@ -712,6 +869,7 @@ Reference examples in **this repo**: [`examples/consumer_test_example.py`](examp
 | `agent_regression` | Regression case files |
 | `agent_security` | Safety / redaction checks |
 | `agent_multi_mcp` | Multi-MCP orchestration |
+| `agent_eval` | Selects registered evals for the `agent_eval` fixture |
 
 ---
 
@@ -737,8 +895,12 @@ from agent_test_kit import (
     AgentExecutionResult,
     AnyOfStep,
     CleanupManager,
+    Eval,
     ForbiddenTermsScorer,
+    Guardrail,
+    GuardrailMonitor,
     HtmlReportWriter,
+    NoProfanityGuardrail,
     JsonReportWriter,
     OptionalStep,
     PromptReviewClient,
@@ -746,15 +908,22 @@ from agent_test_kit import (
     RegressionRunEvaluation,
     RepeatedExecutionResult,
     RequiredFieldsScorer,
+    RequiredTermsEval,
     RequiredTermsScorer,
+    RequiredToolsEval,
     Score,
     Scorer,
+    ToolCall,
     ToolStep,
+    check_guardrails,
+    eval_case,
     evaluate_readiness,
     get_profile,
     load_regression_cases,
     load_report,
+    must_open_pull_request,
     response_text,
+    run_evals,
     run_repeatedly,
     run_verifiers,
     SideEffectVerifier,

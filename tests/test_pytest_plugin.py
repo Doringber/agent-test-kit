@@ -148,7 +148,9 @@ def test_agent_report_html_includes_tool_flow_from_fixture(
 asyncio_mode = auto
 """
     )
-    pytester.makeconftest(
+    # The fake client lives in the test module. The runtime plugin is registered
+    # at session start, so a conftest fixture of the same name does not win.
+    pytester.makepyfile(
         """
 import httpx
 import pytest
@@ -186,11 +188,6 @@ def agent_client(agent_test_config, request):
             result,
         ),
     )
-"""
-    )
-    pytester.makepyfile(
-        """
-import pytest
 
 
 @pytest.mark.asyncio
