@@ -1,15 +1,6 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.png" alt="Agent Test Kit — sci-fi pytest framework for AI agents" width="900">
+  <img src="docs/assets/readme-banner.png" alt="agent-test-kit" width="600">
 </p>
-
-<pre align="center">
-    _                    _       _____         _  __ _  _
-   / \   __ _  ___ _ __ | |_    |_   _|__  ___| |/ _| || |
-  / _ \ / _` |/ _ \ '_ \| __|_____| |/ _ \ / _ \ | |_| || |
- / ___ \ (_| |  __/ | | | ||_____| |  __/  __/ |  _|__   _|
-/_/   \_\__, |\___|_| |_|\__|    |_|\___|\___|_|_|    |_|
-        |___/
-</pre>
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
