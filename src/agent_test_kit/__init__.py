@@ -67,6 +67,7 @@ from agent_test_kit.repetition import (
 from agent_test_kit.reporting.html_report import HtmlReportWriter
 from agent_test_kit.reporting.json_report import JsonReportWriter
 from agent_test_kit.reporting.markdown_status import MarkdownStatusReportWriter
+from agent_test_kit.reporting.monitor_contract import monitor_summary
 from agent_test_kit.reporting.readiness import ReadinessPolicy, evaluate_readiness, load_report
 from agent_test_kit.scoring import (
     ForbiddenTermsScorer,
@@ -149,6 +150,7 @@ __all__ = [
     "guardrail",
     "load_regression_cases",
     "load_report",
+    "monitor_summary",
     "get_profile",
     "must_open_pull_request",
     "register_eval",
