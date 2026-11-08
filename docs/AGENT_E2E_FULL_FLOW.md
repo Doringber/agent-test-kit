@@ -252,7 +252,30 @@ Example upload step (requires `aws-actions/configure-aws-credentials` + `s3:PutO
             "s3://${REPORT_BUCKET}/${REPORT_PREFIX}/agent-test-kit-post-deploy.html"
           aws s3 cp reports/agent-test-kit-post-deploy.html \
             "s3://${REPORT_BUCKET}/agent-ci-reports/${{ github.repository }}/latest.html"
+          aws s3 cp reports/agent-test-kit-post-deploy.json \
+            "s3://${REPORT_BUCKET}/${REPORT_PREFIX}/agent-test-kit-post-deploy.json"
 ```
+
+### Step 10 — Twice-daily monitor reads the same JSON
+
+The production monitor does not re-run pytest. It reads the JSON report from
+step 9 (`--agent-report-json`) and keeps the kit's GO / NO-GO verdict.
+
+Two phases stay separate:
+
+| Phase | Marker | What the monitor calls it |
+|-------|--------|---------------------------|
+| Build / unit | `agent_unit` | `unit` |
+| Post-deploy E2E | `agent_e2e` | `post_deploy` |
+
+`monitor_summary(report)` returns that slice. The keys are
+`schema=agent-test-kit.monitor/v1`, `verdict` (`go` or `no_go`), `blocking`,
+`phase`, `pass_rate`, `security_failures`, `eval_failures`, and
+`guardrail_failures`. A failed scenario, a security failure, or a duplicate
+write is `no_go`. Notes never flip the verdict.
+
+Upload the JSON next to the HTML. The monitor's dry run can load that file
+with no AWS account and no live agent.
 
 ---
 
